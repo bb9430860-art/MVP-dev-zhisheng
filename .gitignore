@@ -1,0 +1,41 @@
+# system
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# env / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# logs
+logs/
+*.log
+
+# backend
+target/
+build/
+.gradle/
+
+# frontend
+node_modules/
+dist/
+.next/
+.nuxt/
+
+# uploads / temp
+uploads/
+tmp/
+temp/
+
+# database
+*.db
+*.sqlite
+*.sql.gz
+# Office temp files
+~$*
+*.tmp
