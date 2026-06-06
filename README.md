@@ -318,6 +318,58 @@ WAREHOUSE
 
 前端必须通过 Axios 拦截器统一携带 token。
 
+#### 4.2.1 MVP 账号与当前用户上下文契约
+
+MVP 阶段不做开放注册。
+
+账号来源：
+
+```text
+管理员创建员工账号
+dev/demo 环境预置演示账号
+```
+
+登录方式：
+
+```text
+账号/手机号 + 密码
+```
+
+登录成功后，后端返回 JWT。后端必须通过 JWT 解析当前登录上下文：
+
+```text
+currentUserId
+tenantId
+role
+```
+
+客户公海、贡献值、订单模块必须使用当前登录人作为业务操作人。
+
+关键写入规则：
+
+```text
+上传客户时，uploader_id = currentUserId
+领取客户时，claimer_id = currentUserId
+填写联系记录时，salesman_id = currentUserId
+转意向时，intent_converter_id = currentUserId
+成单时，order.owner_id / deal_owner_id = currentUserId 或管理员指定
+```
+
+MVP 暂不做：
+
+```text
+开放注册
+短信验证码
+找回密码
+第三方登录
+复杂权限矩阵
+员工自助注册
+```
+
+系统权限角色用于鉴权，业务贡献身份用于奖励归属，两者不能混用。
+
+在 platform-auth 尚未完成时，客户线 dev 阶段可以 mock currentUserId，但接口设计必须保留 JWT 接入点，方便后续替换为真实登录态。
+
 ### 4.3 订单与产品/点位契约
 
 客户线创建：
@@ -648,6 +700,74 @@ contribution_transaction
 ```
 
 所有贡献值变化都必须通过流水记录。
+
+### 6.4 客户公海贡献归属规则
+
+客户公海贡献归属必须区分“系统权限角色”和“业务贡献身份”。
+
+系统权限角色用于鉴权、菜单、接口和页面权限：
+
+```text
+BOSS
+ADMIN
+SALESMAN
+PRODUCTION_MANAGER
+WORKER
+WAREHOUSE
+```
+
+业务贡献身份用于判断一条客户线索、意向客户或订单中谁应该获得贡献值：
+
+```text
+uploader
+claimer
+converter
+dealOwner
+```
+
+业务贡献身份不能写进系统 role 字段。一个 SALESMAN 可以在不同客户线索中承担不同贡献身份，业务贡献身份必须通过业务表字段追溯。
+
+关键归属字段：
+
+```text
+customer_lead.uploader_id
+lead_claim.claimer_id
+lead_contact_record.salesman_id
+customer_lead.intent_converter_id
+order.source_lead_id
+order.owner_id / deal_owner_id
+```
+
+奖励触发规则：
+
+```text
+上传客户不直接发奖励，只计入每日上新任务。
+转意向时给 uploader 和 converter 分别发贡献值。
+成交时给 dealOwner 和 uploader 分别发贡献值。
+领取客户不奖励。
+超时未联系产生 CLAIM_TIMEOUT_PENALTY。
+```
+
+同一个人承担多个身份时，MVP 允许按不同贡献事件分别获得多笔流水。每一笔贡献值变化都必须写入 contribution_transaction，且必须包含 idempotency_key。
+
+幂等和账户规则：
+
+```text
+同一个 idempotency_key 只能成功生成一条贡献值流水。
+禁止绕过 contribution_transaction 直接修改 contribution_account.current_score。
+```
+
+MVP 暂不做：
+
+```text
+真实工资结算
+复杂奖金审批
+贡献值申诉
+阶梯奖金
+团队分成
+跨月结算
+复杂绩效考核
+```
 
 ---
 
