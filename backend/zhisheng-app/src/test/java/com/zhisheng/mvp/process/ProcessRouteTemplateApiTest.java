@@ -73,6 +73,8 @@ class ProcessRouteTemplateApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isEmpty());
 
+        createStep(routeId, "STEP-DESIGN", "Design", "WORKER");
+
         mockMvc.perform(patch("/api/process/route-templates/{id}/enabled", routeId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("enabled", true))))
@@ -125,6 +127,38 @@ class ProcessRouteTemplateApiTest {
         assertThat(ids).containsExactlyInAnyOrder(exactId, generalId, emptyId);
     }
 
+    @Test
+    void routeTemplateRequiresActiveEnabledStepBeforeEnable() throws Exception {
+        long routeId = createRoute("ROUTE-ENABLE", "Enable route", "GENERAL", false);
+
+        mockMvc.perform(patch("/api/process/route-templates/{id}/enabled", routeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("enabled", true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Route template requires at least one active enabled step"));
+
+        long disabledStepId = createStep(routeId, "STEP-DISABLED", "Disabled step", "WORKER");
+        mockMvc.perform(patch("/api/process/route-templates/{routeId}/steps/{stepId}/enabled", routeId, disabledStepId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("enabled", false))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/process/route-templates/{id}/enabled", routeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("enabled", true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Route template requires at least one active enabled step"));
+
+        createStep(routeId, "STEP-ACTIVE", "Active step", "WORKER");
+
+        mockMvc.perform(patch("/api/process/route-templates/{id}/enabled", routeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("enabled", true))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
     private long createRoute(String code, String name, String productType, boolean enabled) throws Exception {
         String response = mockMvc.perform(post("/api/process/route-templates")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,6 +168,26 @@ class ProcessRouteTemplateApiTest {
                                 "productType", productType,
                                 "description", name + " description",
                                 "enabled", enabled))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).get("data").get("id").asLong();
+    }
+
+    private long createStep(long routeId, String code, String name, String role) throws Exception {
+        String response = mockMvc.perform(post("/api/process/route-templates/{routeId}/steps", routeId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "stepCode", code,
+                                "stepName", name,
+                                "assignedRole", role,
+                                "photoRequired", false,
+                                "remarkRequired", false,
+                                "mobileEnabled", true,
+                                "estimatedHours", 1,
+                                "operationInstruction", name + " instruction"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andReturn()

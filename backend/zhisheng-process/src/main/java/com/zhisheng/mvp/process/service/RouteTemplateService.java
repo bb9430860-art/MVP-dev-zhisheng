@@ -72,6 +72,9 @@ public class RouteTemplateService {
     @Transactional
     public RouteTemplateResponse setEnabled(Long id, boolean enabled) {
         ProcessRouteTemplate route = requiredRoute(id);
+        if (enabled && activeStepCount(route.getId()) == 0) {
+            throw new IllegalArgumentException("Route template requires at least one active enabled step");
+        }
         route.setEnabled(enabled);
         route.setUpdatedAt(LocalDateTime.now());
         routeMapper.updateById(route);
