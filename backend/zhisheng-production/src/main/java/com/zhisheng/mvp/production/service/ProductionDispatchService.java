@@ -5,9 +5,15 @@ import com.zhisheng.mvp.process.entity.ProcessRouteTemplate;
 import com.zhisheng.mvp.process.entity.ProcessStepTemplate;
 import com.zhisheng.mvp.process.mapper.ProcessRouteTemplateMapper;
 import com.zhisheng.mvp.process.mapper.ProcessStepTemplateMapper;
+import com.zhisheng.mvp.production.dto.DispatchConfigFromTemplateRequest;
+import com.zhisheng.mvp.production.dto.DispatchConfigResponse;
+import com.zhisheng.mvp.production.dto.DispatchConfigStepResponse;
 import com.zhisheng.mvp.production.dto.DispatchProductionRequest;
 import com.zhisheng.mvp.production.dto.DispatchStepRequest;
+import com.zhisheng.mvp.production.dto.OrderItemConfigContextResponse;
+import com.zhisheng.mvp.production.dto.OrderItemProductionResponse;
 import com.zhisheng.mvp.production.dto.ProductionDispatchResponse;
+import com.zhisheng.mvp.production.dto.ProductionSummaryResponse;
 import com.zhisheng.mvp.production.entity.ProductionRouteInstance;
 import com.zhisheng.mvp.production.entity.ProductionStepInstance;
 import com.zhisheng.mvp.production.exception.ProductionDispatchException;
@@ -21,13 +27,16 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
+@Profile({"dev", "test"})
 public class ProductionDispatchService {
 
     private static final long DEFAULT_TENANT_ID = 1L;
@@ -56,6 +65,86 @@ public class ProductionDispatchService {
         this.stepInstanceMapper = stepInstanceMapper;
     }
 
+    @Transactional(readOnly = true)
+    public OrderItemConfigContextResponse configContext(Long orderItemId) {
+        OrderItemProductionContext orderItem = requiredOrderItem(orderItemId);
+        return new OrderItemConfigContextResponse(
+                OrderItemProductionResponse.from(orderItem),
+                isDispatched(orderItem));
+    }
+
+    @Transactional(readOnly = true)
+    public DispatchConfigResponse createConfigFromTemplate(
+            Long orderItemId,
+            DispatchConfigFromTemplateRequest request) {
+        OrderItemProductionContext orderItem = requiredOrderItem(orderItemId);
+        ensureNotDispatched(orderItem);
+        if (request == null || request.routeTemplateId() == null) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
+        }
+        ProcessRouteTemplate routeTemplate = availableRouteTemplate(request.routeTemplateId());
+        List<ProcessStepTemplate> steps = activeTemplateSteps(routeTemplate.getId());
+        if (steps.isEmpty()) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_HAS_NO_ENABLED_STEPS");
+        }
+
+        return new DispatchConfigResponse(
+                routeTemplate.getId(),
+                routeTemplate.getRouteCode(),
+                routeTemplate.getRouteName(),
+                routeTemplate.getProductType(),
+                routeTemplate.getDescription(),
+                steps.stream()
+                        .map(this::toDispatchConfigStep)
+                        .toList());
+    }
+
+    @Transactional(readOnly = true)
+    public ProductionSummaryResponse summary(Long orderItemId) {
+        OrderItemProductionContext orderItem = requiredOrderItem(orderItemId);
+        ProductionRouteInstance routeInstance = activeRouteInstance(orderItem.id());
+        if (routeInstance == null) {
+            return new ProductionSummaryResponse(
+                    orderItem.id(),
+                    orderItem.productionStatus(),
+                    orderItem.productionRouteInstanceId(),
+                    orderItem.productionProgress(),
+                    0,
+                    0,
+                    null,
+                    false,
+                    false);
+        }
+
+        List<ProductionStepInstance> steps = stepInstanceMapper.selectList(
+                new LambdaQueryWrapper<ProductionStepInstance>()
+                        .eq(ProductionStepInstance::getTenantId, DEFAULT_TENANT_ID)
+                        .eq(ProductionStepInstance::getRouteInstanceId, routeInstance.getId())
+                        .eq(ProductionStepInstance::getDeleted, false)
+                        .orderByAsc(ProductionStepInstance::getStepOrder)
+                        .orderByAsc(ProductionStepInstance::getId));
+        int completedSteps = (int) steps.stream()
+                .filter(step -> "COMPLETED".equals(step.getStatus()))
+                .count();
+        String currentStepName = steps.stream()
+                .filter(step -> !"COMPLETED".equals(step.getStatus()))
+                .map(ProductionStepInstance::getStepName)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+
+        return new ProductionSummaryResponse(
+                orderItem.id(),
+                orderItem.productionStatus(),
+                routeInstance.getId(),
+                routeInstance.getProductionProgress(),
+                steps.size(),
+                completedSteps,
+                currentStepName,
+                true,
+                routeInstance.getFrozen());
+    }
+
     @Transactional
     public ProductionDispatchResponse dispatch(Long orderItemId, DispatchProductionRequest request) {
         if (orderItemId == null) {
@@ -68,16 +157,10 @@ public class ProductionDispatchService {
             throw new ProductionDispatchException("DISPATCH_STEPS_REQUIRED");
         }
 
-        OrderItemProductionContext orderItem = orderItemReadPort.findById(orderItemId)
-                .orElseThrow(() -> new ProductionDispatchException("ORDER_ITEM_NOT_FOUND"));
+        OrderItemProductionContext orderItem = requiredOrderItem(orderItemId);
         ensureNotDispatched(orderItem);
 
-        ProcessRouteTemplate routeTemplate = routeTemplateMapper.selectById(request.routeTemplateId());
-        if (routeTemplate == null
-                || !Boolean.TRUE.equals(routeTemplate.getEnabled())
-                || Boolean.TRUE.equals(routeTemplate.getDeleted())) {
-            throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
-        }
+        ProcessRouteTemplate routeTemplate = availableRouteTemplate(request.routeTemplateId());
         ensureTemplateHasEnabledSteps(routeTemplate.getId());
         List<DispatchStepRequest> steps = validateAndNormalizeSteps(routeTemplate.getId(), request.steps());
 
@@ -106,17 +189,43 @@ public class ProductionDispatchService {
                 steps.size());
     }
 
+    private OrderItemProductionContext requiredOrderItem(Long orderItemId) {
+        if (orderItemId == null) {
+            throw new ProductionDispatchException("ORDER_ITEM_NOT_FOUND");
+        }
+        return orderItemReadPort.findById(orderItemId)
+                .orElseThrow(() -> new ProductionDispatchException("ORDER_ITEM_NOT_FOUND"));
+    }
+
+    private ProcessRouteTemplate availableRouteTemplate(Long routeTemplateId) {
+        ProcessRouteTemplate routeTemplate = routeTemplateMapper.selectById(routeTemplateId);
+        if (routeTemplate == null
+                || !Boolean.TRUE.equals(routeTemplate.getEnabled())
+                || Boolean.TRUE.equals(routeTemplate.getDeleted())) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
+        }
+        return routeTemplate;
+    }
+
     private void ensureNotDispatched(OrderItemProductionContext orderItem) {
+        if (isDispatched(orderItem)) {
+            throw new ProductionDispatchException("ORDER_ITEM_ALREADY_DISPATCHED");
+        }
+    }
+
+    private boolean isDispatched(OrderItemProductionContext orderItem) {
         if (orderItem.productionRouteInstanceId() != null || STATUS_DISPATCHED.equals(orderItem.productionStatus())) {
-            throw new ProductionDispatchException("ORDER_ITEM_ALREADY_DISPATCHED");
+            return true;
         }
-        Long activeCount = routeInstanceMapper.selectCount(new LambdaQueryWrapper<ProductionRouteInstance>()
+        return activeRouteInstance(orderItem.id()) != null;
+    }
+
+    private ProductionRouteInstance activeRouteInstance(Long orderItemId) {
+        return routeInstanceMapper.selectOne(new LambdaQueryWrapper<ProductionRouteInstance>()
                 .eq(ProductionRouteInstance::getTenantId, DEFAULT_TENANT_ID)
-                .eq(ProductionRouteInstance::getOrderItemId, orderItem.id())
-                .eq(ProductionRouteInstance::getDeleted, false));
-        if (activeCount > 0) {
-            throw new ProductionDispatchException("ORDER_ITEM_ALREADY_DISPATCHED");
-        }
+                .eq(ProductionRouteInstance::getOrderItemId, orderItemId)
+                .eq(ProductionRouteInstance::getDeleted, false)
+                .last("limit 1"));
     }
 
     private void ensureTemplateHasEnabledSteps(Long routeTemplateId) {
@@ -128,6 +237,32 @@ public class ProductionDispatchService {
         if (activeStepCount == 0) {
             throw new ProductionDispatchException("ROUTE_TEMPLATE_HAS_NO_ENABLED_STEPS");
         }
+    }
+
+    private List<ProcessStepTemplate> activeTemplateSteps(Long routeTemplateId) {
+        return stepTemplateMapper.selectList(new LambdaQueryWrapper<ProcessStepTemplate>()
+                .eq(ProcessStepTemplate::getTenantId, DEFAULT_TENANT_ID)
+                .eq(ProcessStepTemplate::getRouteTemplateId, routeTemplateId)
+                .eq(ProcessStepTemplate::getEnabled, true)
+                .eq(ProcessStepTemplate::getDeleted, false)
+                .orderByAsc(ProcessStepTemplate::getStepOrder)
+                .orderByAsc(ProcessStepTemplate::getId));
+    }
+
+    private DispatchConfigStepResponse toDispatchConfigStep(ProcessStepTemplate step) {
+        return new DispatchConfigStepResponse(
+                "template-step-" + step.getId(),
+                step.getId(),
+                step.getStepCode(),
+                step.getStepName(),
+                step.getStepOrder(),
+                step.getAssignedRole(),
+                null,
+                step.getPhotoRequired(),
+                step.getRemarkRequired(),
+                step.getMobileEnabled(),
+                step.getEstimatedHours(),
+                step.getOperationInstruction());
     }
 
     private List<DispatchStepRequest> validateAndNormalizeSteps(

@@ -7,6 +7,10 @@
           <el-icon><Tickets /></el-icon>
           <span>工艺路线模板</span>
         </el-menu-item>
+        <el-menu-item index="/production/order-items/1001/configure">
+          <el-icon><Operation /></el-icon>
+          <span>生产下发配置</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -21,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { Tickets } from "@element-plus/icons-vue";
+import { Operation, Tickets } from "@element-plus/icons-vue";
 </script>
 
 <style scoped>
