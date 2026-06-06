@@ -22,6 +22,14 @@ mvn -pl zhisheng-app -am install
 
 Use the `dev` profile for quick frontend integration. It uses an H2 in-memory database and runs Flyway migrations automatically.
 
+Windows PowerShell:
+
+```powershell
+mvn -pl zhisheng-app spring-boot:run "-Dspring-boot.run.profiles=dev"
+```
+
+Git Bash, macOS, and Linux:
+
 ```bash
 mvn -pl zhisheng-app spring-boot:run -Dspring-boot.run.profiles=dev
 ```
@@ -42,4 +50,4 @@ classpath:db/migration
 
 MariaDB remains the formal database target for production and later shared environments. Add a dedicated profile such as `application-prod.yml` or environment-based datasource settings when the deployment database is ready.
 
-Do not treat H2 as the production database design. It is only for local dev startup and fast admin-web integration.
+Do not treat H2 as the production database design. It is only for local dev startup and frontend integration.

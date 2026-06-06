@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { Tickets } from '@element-plus/icons-vue'
+import { Tickets } from "@element-plus/icons-vue";
 </script>
 
 <style scoped>
