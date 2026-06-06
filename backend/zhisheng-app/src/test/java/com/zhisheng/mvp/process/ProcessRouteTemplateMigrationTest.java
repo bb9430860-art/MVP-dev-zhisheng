@@ -28,8 +28,6 @@ class ProcessRouteTemplateMigrationTest {
         assertThat(tables)
                 .contains("process_route_template", "process_step_template")
                 .doesNotContain(
-                        "production_route_instance",
-                        "production_step_instance",
                         "production_step_checkin",
                         "inventory_stock",
                         "attendance_record",

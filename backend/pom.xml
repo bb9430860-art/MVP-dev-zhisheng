@@ -15,6 +15,7 @@
     <modules>
         <module>zhisheng-common</module>
         <module>zhisheng-process</module>
+        <module>zhisheng-production</module>
         <module>zhisheng-app</module>
     </modules>
 
