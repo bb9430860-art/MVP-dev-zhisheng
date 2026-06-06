@@ -6,7 +6,7 @@
           {{ isCreate ? "新建工艺路线模板" : "编辑工艺路线模板" }}
         </h1>
         <p class="page-description">
-          模板阶段只配置系统角色和执行要求，不绑定具体员工。
+          配置路线基础信息和工序模板；模板阶段只绑定系统角色，不绑定具体员工。
         </p>
       </div>
     </div>
@@ -23,9 +23,9 @@
     <el-card v-if="routeId" shadow="never" style="margin-top: 16px">
       <div class="page-header">
         <div>
-          <h2 class="section-title">工序模板</h2>
+          <h2 class="section-title">工序模板管理</h2>
           <p class="page-description">
-            停用工序仍显示在管理列表中，但不参与 active 工序排序。
+            工序按顺序执行；停用工序仍可查看，但不参与 active 排序和后续实例复制。
           </p>
         </div>
       </div>
@@ -152,7 +152,10 @@ async function saveRoute() {
       enabled: originalEnabled.value,
     });
     if (form.enabled !== originalEnabled.value) {
-      await applyRouteEnabled(form.enabled === true);
+      const changed = await applyRouteEnabled(form.enabled === true);
+      if (!changed) {
+        return;
+      }
     }
     await loadRoute();
     ElMessage.success("已保存路线模板");
@@ -163,15 +166,30 @@ async function saveRoute() {
 
 async function applyRouteEnabled(enabled: boolean) {
   if (!routeId.value) {
-    return;
+    return false;
   }
   if (enabled && !hasActiveEnabledStep(steps.value)) {
-    ElMessage.warning("启用路线模板前至少需要一道启用工序");
-    return;
+    ElMessage.warning(
+      "启用前请至少添加并启用一道工序，否则无法被生产配置选择",
+    );
+    form.enabled = originalEnabled.value;
+    return false;
+  }
+  if (!enabled) {
+    await ElMessageBox.confirm(
+      "停用后该路线不会出现在模板选择接口中，确认停用？",
+      "停用路线模板",
+      {
+        confirmButtonText: "确认停用",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
   }
   const updated = await setRouteTemplateEnabled(routeId.value, enabled);
   originalEnabled.value = updated.enabled;
   form.enabled = updated.enabled;
+  return true;
 }
 
 function openStepDialog(step: StepTemplate | null) {
@@ -208,7 +226,19 @@ async function toggleStepEnabled(step: StepTemplate) {
   if (!routeId.value) {
     return;
   }
-  await setStepTemplateEnabled(routeId.value, step.id, !step.enabled);
+  const nextEnabled = !step.enabled;
+  if (!nextEnabled) {
+    await ElMessageBox.confirm(
+      `停用后「${step.stepName}」不参与 active 排序和后续实例复制，确认停用？`,
+      "停用工序模板",
+      {
+        confirmButtonText: "确认停用",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  }
+  await setStepTemplateEnabled(routeId.value, step.id, nextEnabled);
   ElMessage.success(step.enabled ? "已停用工序" : "已启用工序");
   await loadSteps();
 }
@@ -217,9 +247,15 @@ async function removeStep(step: StepTemplate) {
   if (!routeId.value) {
     return;
   }
-  await ElMessageBox.confirm(`确认删除工序「${step.stepName}」？`, "删除确认", {
-    type: "warning",
-  });
+  await ElMessageBox.confirm(
+    `删除后「${step.stepName}」将从当前工艺路线中移除，确认删除？`,
+    "删除工序模板",
+    {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
+      type: "warning",
+    },
+  );
   await deleteStepTemplate(routeId.value, step.id);
   ElMessage.success("已删除工序");
   await loadSteps();

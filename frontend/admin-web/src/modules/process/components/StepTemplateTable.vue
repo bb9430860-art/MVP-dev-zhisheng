@@ -20,25 +20,29 @@
       </el-table-column>
       <el-table-column prop="stepCode" label="工序编码" min-width="120" />
       <el-table-column prop="stepName" label="工序名称" min-width="140" />
-      <el-table-column prop="assignedRole" label="执行角色" min-width="140" />
-      <el-table-column prop="photoRequired" label="拍照" width="80">
+      <el-table-column prop="assignedRole" label="执行角色" min-width="140">
+        <template #default="{ row }">
+          {{ formatAssignedRole(row.assignedRole) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="photoRequired" label="拍照" width="100">
         <template #default="{ row }">
           <el-tag :type="row.photoRequired ? 'warning' : 'info'">{{
-            row.photoRequired ? "需要" : "否"
+            row.photoRequired ? "需拍照" : "不要求"
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="remarkRequired" label="备注" width="80">
+      <el-table-column prop="remarkRequired" label="备注" width="100">
         <template #default="{ row }">
           <el-tag :type="row.remarkRequired ? 'warning' : 'info'">{{
-            row.remarkRequired ? "需要" : "否"
+            row.remarkRequired ? "需备注" : "不要求"
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="mobileEnabled" label="移动端" width="90">
+      <el-table-column prop="mobileEnabled" label="移动端" width="110">
         <template #default="{ row }">
           <el-tag :type="row.mobileEnabled ? 'success' : 'info'">{{
-            row.mobileEnabled ? "允许" : "否"
+            row.mobileEnabled ? "可移动端" : "仅后台"
           }}</el-tag>
         </template>
       </el-table-column>
@@ -85,6 +89,7 @@ import { ElMessage } from "element-plus";
 import { reactive, watch } from "vue";
 
 import type { StepTemplate } from "../types";
+import { formatAssignedRole } from "../utils/displayLabels";
 
 const props = defineProps<{
   steps: StepTemplate[];

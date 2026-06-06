@@ -40,11 +40,13 @@ The dev profile database is intentionally local-only:
 jdbc:h2:mem:zhisheng_dev;MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1
 ```
 
-Flyway runs existing migrations from:
+Flyway runs schema migrations and dev-only demo seed migrations from:
 
 ```text
-classpath:db/migration
+classpath:db/migration,classpath:db/dev-migration
 ```
+
+The dev seed migration initializes process route template demo data for local admin-web integration. It is intended for the H2 in-memory `dev` profile; formal MariaDB environments should not load `db/dev-migration`.
 
 ## MariaDB Configuration
 
