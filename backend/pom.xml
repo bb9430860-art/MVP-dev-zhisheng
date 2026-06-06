@@ -22,6 +22,7 @@
         <java.version>17</java.version>
         <spring-boot.version>3.3.5</spring-boot.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
+        <flyway.version>10.20.1</flyway.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -42,11 +43,16 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.13.0</version>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
                     <configuration>
                         <release>${java.version}</release>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
                 </plugin>
             </plugins>
         </pluginManagement>
