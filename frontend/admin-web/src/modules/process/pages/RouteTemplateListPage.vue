@@ -2,8 +2,10 @@
   <section>
     <div class="page-header">
       <div>
-        <h1 class="page-title">工艺路线模板</h1>
-        <p class="page-description">维护可复用的生产工艺路线和适用产品类型。</p>
+        <h1 class="page-title">工艺路线模板管理</h1>
+        <p class="page-description">
+          管理精神堡垒、楼层牌、发光字和通用导视等可复用工艺路线。
+        </p>
       </div>
       <el-button
         type="primary"
@@ -34,7 +36,7 @@
           <el-option
             v-for="item in productTypeFilterOptions"
             :key="item"
-            :label="item || '空'"
+            :label="`${formatProductType(item)}（${item}）`"
             :value="item"
           />
         </el-select>
@@ -55,7 +57,7 @@
         <el-table-column prop="routeName" label="路线名称" min-width="180" />
         <el-table-column prop="productType" label="产品类型" min-width="150">
           <template #default="{ row }">{{
-            row.productType || "通用"
+            formatProductType(row.productType)
           }}</template>
         </el-table-column>
         <el-table-column prop="enabled" label="状态" width="90">
@@ -92,6 +94,11 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <div class="empty-state">
+            本地 dev 启动后会自动初始化演示模板；也可以点击“新建”创建模板。
+          </div>
+        </template>
       </el-table>
     </el-card>
   </section>
@@ -110,6 +117,7 @@ import {
   setRouteTemplateEnabled,
 } from "../api/processRouteTemplateApi";
 import type { RouteTemplate, RouteTemplateFilters } from "../types";
+import { formatProductType } from "../utils/displayLabels";
 import { filterRouteTemplates } from "../utils/routeTemplateFilters";
 import { hasActiveEnabledStep } from "../utils/routeTemplateRules";
 
@@ -148,9 +156,21 @@ async function toggleEnabled(route: RouteTemplate) {
   if (nextEnabled) {
     const steps = await listStepTemplates(route.id);
     if (!hasActiveEnabledStep(steps)) {
-      ElMessage.warning("启用路线模板前至少需要一道启用工序");
+      ElMessage.warning(
+        "启用前请至少添加并启用一道工序，否则无法被生产配置选择",
+      );
       return;
     }
+  } else {
+    await ElMessageBox.confirm(
+      `停用后「${route.routeName}」不会出现在模板选择接口中，确认停用？`,
+      "停用路线模板",
+      {
+        confirmButtonText: "确认停用",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
   }
 
   await setRouteTemplateEnabled(route.id, nextEnabled);
@@ -160,9 +180,11 @@ async function toggleEnabled(route: RouteTemplate) {
 
 async function removeRoute(route: RouteTemplate) {
   await ElMessageBox.confirm(
-    `确认删除路线模板「${route.routeName}」？`,
-    "删除确认",
+    `删除后「${route.routeName}」不会出现在普通列表和模板选择接口中，确认删除？`,
+    "删除路线模板",
     {
+      confirmButtonText: "确认删除",
+      cancelButtonText: "取消",
       type: "warning",
     },
   );

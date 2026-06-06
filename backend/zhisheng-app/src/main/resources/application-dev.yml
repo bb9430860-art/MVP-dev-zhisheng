@@ -6,7 +6,7 @@ spring:
     password:
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/dev-migration
   jackson:
     default-property-inclusion: non_null
 
