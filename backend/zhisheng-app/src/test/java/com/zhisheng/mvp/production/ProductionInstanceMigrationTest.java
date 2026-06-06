@@ -1,11 +1,9 @@
-package com.zhisheng.mvp.process;
+package com.zhisheng.mvp.production;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -16,17 +14,17 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class ProcessRouteTemplateMigrationTest {
+class ProductionInstanceMigrationTest {
 
     @Autowired
     private DataSource dataSource;
 
     @Test
-    void flywayCreatesProcessTemplateTablesWithDeleteMarkerIndexesAndNoForbiddenTables() throws Exception {
+    void flywayCreatesProductionInstanceTablesAndNoOutOfScopeTables() throws Exception {
         Set<String> tables = tableNames();
 
         assertThat(tables)
-                .contains("process_route_template", "process_step_template")
+                .contains("production_route_instance", "production_step_instance")
                 .doesNotContain(
                         "production_step_checkin",
                         "inventory_stock",
@@ -37,21 +35,35 @@ class ProcessRouteTemplateMigrationTest {
                         "contribution_account",
                         "contribution_transaction");
 
-        assertThat(columns("process_route_template")).contains("deleted", "delete_marker", "product_type");
-        assertThat(columns("process_step_template")).contains(
+        assertThat(columns("production_route_instance")).contains(
+                "order_id",
+                "order_item_id",
+                "source_route_template_id",
+                "route_code_snapshot",
+                "route_name_snapshot",
+                "status",
+                "production_progress",
+                "frozen",
                 "deleted",
-                "delete_marker",
-                "route_template_id",
+                "delete_marker");
+
+        assertThat(columns("production_step_instance")).contains(
+                "route_instance_id",
+                "order_id",
+                "order_item_id",
+                "source_step_template_id",
+                "step_code_snapshot",
+                "step_name",
                 "step_order",
                 "assigned_role",
+                "assigned_user_id",
                 "photo_required",
                 "remark_required",
-                "mobile_enabled");
-
-        String migration = Files.readString(Path.of(
-                "src/main/resources/db/migration/V030__process_route_template.sql"));
-        assertThat(migration).contains(
-                "UNIQUE KEY uk_step_template_active_order (tenant_id, route_template_id, step_order, delete_marker)");
+                "mobile_enabled",
+                "status",
+                "frozen",
+                "deleted",
+                "delete_marker");
     }
 
     private Set<String> tableNames() throws Exception {
@@ -75,5 +87,4 @@ class ProcessRouteTemplateMigrationTest {
         }
         return names;
     }
-
 }

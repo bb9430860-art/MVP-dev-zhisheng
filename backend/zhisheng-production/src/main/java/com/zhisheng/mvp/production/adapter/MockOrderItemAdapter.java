@@ -17,6 +17,10 @@ public class MockOrderItemAdapter implements OrderItemReadPort, OrderItemProduct
 
     private final Map<Long, OrderItemProductionContext> orderItems = new ConcurrentHashMap<>();
 
+    public MockOrderItemAdapter() {
+        seedDemoOrderItems();
+    }
+
     // TODO: replace with customer-line order_item contract
     @Override
     public Optional<OrderItemProductionContext> findById(Long orderItemId) {
@@ -50,5 +54,26 @@ public class MockOrderItemAdapter implements OrderItemReadPort, OrderItemProduct
 
     public void reset() {
         orderItems.clear();
+    }
+
+    private void seedDemoOrderItems() {
+        putDemoOrderItem(OrderItemProductionContext.notDispatched(
+                1001L,
+                501L,
+                "入口精神堡垒",
+                "SPIRIT_FORTRESS",
+                BigDecimal.ONE));
+        putDemoOrderItem(OrderItemProductionContext.notDispatched(
+                1002L,
+                501L,
+                "楼层牌 A 栋",
+                "FLOOR_SIGN",
+                BigDecimal.ONE));
+        putDemoOrderItem(OrderItemProductionContext.notDispatched(
+                1003L,
+                501L,
+                "发光字门头",
+                "ILLUMINATED_LETTER",
+                BigDecimal.ONE));
     }
 }
