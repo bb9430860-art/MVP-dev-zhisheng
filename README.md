@@ -316,52 +316,59 @@ WORKER
 WAREHOUSE
 ```
 
+前端必须通过 Axios 拦截器统一携带 token。
+
 #### 4.2.1 MVP 账号与当前用户上下文契约
 
 MVP 阶段不做开放注册。
 
-系统账号来源：
+账号来源：
 
 ```text
 管理员创建员工账号
 dev/demo 环境预置演示账号
+```
 
 登录方式：
 
+```text
 账号/手机号 + 密码
-登录成功后返回 JWT
-前端通过 Axios 拦截器携带 token
-后端通过 JWT 获取 currentUserId、tenantId、role
+```
+
+登录成功后，后端返回 JWT。后端必须通过 JWT 解析当前登录上下文：
+
+```text
+currentUserId
+tenantId
+role
+```
+
+客户公海、贡献值、订单模块必须使用当前登录人作为业务操作人。
+
+关键写入规则：
+
+```text
+上传客户时，uploader_id = currentUserId
+领取客户时，claimer_id = currentUserId
+填写联系记录时，salesman_id = currentUserId
+转意向时，intent_converter_id = currentUserId
+成单时，order.owner_id / deal_owner_id = currentUserId 或管理员指定
+```
 
 MVP 暂不做：
 
+```text
 开放注册
-短信验证码注册
+短信验证码
 找回密码
 第三方登录
 复杂权限矩阵
 员工自助注册
+```
 
-客户公海、贡献值、订单模块必须使用当前登录人作为业务操作人。
+系统权限角色用于鉴权，业务贡献身份用于奖励归属，两者不能混用。
 
-关键字段归属：
-
-上传客户时：customer_lead.uploader_id = currentUserId
-领取客户时：lead_claim.claimer_id = currentUserId
-填写联系记录时：lead_contact_record.salesman_id = currentUserId
-转意向时：customer_lead.intent_converter_id = currentUserId
-成单时：order.owner_id / deal_owner_id = currentUserId 或管理员指定的成交负责人
-贡献值流水：contribution_transaction.employee_id = 获得贡献值的员工 ID
-
-注意：
-
-系统权限角色用于鉴权。
-业务贡献身份用于奖励归属。
-两者不能混用。
-
-如果 platform-auth / system-user 模块尚未完成，客户线模块可以在 dev 阶段临时使用 mock currentUserId 或演示账号 seed，但接口设计必须保留 JWT 当前用户接入点。
-
-前端必须通过 Axios 拦截器统一携带 token。
+在 platform-auth 尚未完成时，客户线 dev 阶段可以 mock currentUserId，但接口设计必须保留 JWT 接入点，方便后续替换为真实登录态。
 
 ### 4.3 订单与产品/点位契约
 
@@ -456,7 +463,6 @@ POST /api/contribution/events
 产生生产/考勤相关贡献事件
 不直接更新贡献值账户余额
 ```
-客户线内部的客户公海、转意向、成单奖励，也必须遵守同一套贡献值事件与流水规则，不允许绕过 contribution_transaction 直接改 contribution_account。
 
 ### 4.6 文件上传契约
 
@@ -683,6 +689,7 @@ MVP 先支持：
 ```
 
 ### 6.3 必须有流水
+
 禁止只存余额。
 
 必须有：
@@ -690,16 +697,15 @@ MVP 先支持：
 ```text
 contribution_account
 contribution_transaction
-所有贡献值变化都必须通过流水记录。
 ```
+
+所有贡献值变化都必须通过流水记录。
 
 ### 6.4 客户公海贡献归属规则
 
-客户公海奖励不能只按系统权限角色判断，必须区分“系统权限角色”和“业务贡献身份”。
+客户公海贡献归属必须区分“系统权限角色”和“业务贡献身份”。
 
-#### 6.4.1 系统权限角色
-
-系统权限角色用于控制菜单、接口和页面权限。
+系统权限角色用于鉴权、菜单、接口和页面权限：
 
 ```text
 BOSS
@@ -708,126 +714,52 @@ SALESMAN
 PRODUCTION_MANAGER
 WORKER
 WAREHOUSE
-6.4.2 业务贡献身份
+```
 
-业务贡献身份用于判断一条客户线索、意向客户或订单中，谁应该获得贡献值。
+业务贡献身份用于判断一条客户线索、意向客户或订单中谁应该获得贡献值：
 
-uploader      原始上传人：最初把潜在客户上传到公海的人
-claimer       领取人：从公海中领取该客户的人
-converter     转化人：把潜在客户转为意向客户的人
-dealOwner     成交负责人：最终促成订单成交的人
+```text
+uploader
+claimer
+converter
+dealOwner
+```
 
-注意：
+业务贡献身份不能写进系统 role 字段。一个 SALESMAN 可以在不同客户线索中承担不同贡献身份，业务贡献身份必须通过业务表字段追溯。
 
-系统权限角色不等于业务贡献身份。
-一个 SALESMAN 可以在不同客户线索中承担不同贡献身份。
-业务贡献身份不得写入系统 role 字段。
-业务贡献身份必须通过业务表字段追溯。
-6.4.3 关键归属字段
+关键归属字段：
 
-客户公海、订单和贡献值模块至少需要能追溯以下字段：
+```text
+customer_lead.uploader_id
+lead_claim.claimer_id
+lead_contact_record.salesman_id
+customer_lead.intent_converter_id
+order.source_lead_id
+order.owner_id / deal_owner_id
+```
 
-customer_lead.uploader_id              原始上传人
-lead_claim.claimer_id                  领取人
-lead_contact_record.salesman_id        联系人 / 跟进人
-customer_lead.intent_converter_id      转意向人
-order.source_lead_id                   订单来源线索
-order.owner_id / deal_owner_id         成交负责人
+奖励触发规则：
 
-如果 MVP 暂时还没有完整订单表，也必须在订单设计中预留：
+```text
+上传客户不直接发奖励，只计入每日上新任务。
+转意向时给 uploader 和 converter 分别发贡献值。
+成交时给 dealOwner 和 uploader 分别发贡献值。
+领取客户不奖励。
+超时未联系产生 CLAIM_TIMEOUT_PENALTY。
+```
 
-source_lead_id
-owner_id / deal_owner_id
+同一个人承担多个身份时，MVP 允许按不同贡献事件分别获得多笔流水。每一笔贡献值变化都必须写入 contribution_transaction，且必须包含 idempotency_key。
 
-否则后续无法给原始上传人和成交负责人发放成交奖励。
+幂等和账户规则：
 
-6.4.4 奖励触发规则
-
-上传客户时：
-
-上传人只完成每日上新任务。
-上传动作不直接产生贡献值奖励。
-
-客户转意向时：
-
-原始上传人获得：LEAD_BECAME_INTENTIONAL_UPLOADER
-转意向业务员获得：LEAD_BECAME_INTENTIONAL_CONVERTER
-
-客户成交时：
-
-成交负责人获得：DEAL_CLOSED_OWNER
-原始上传人获得：DEAL_CLOSED_UPLOADER
-
-领取客户时：
-
-领取客户不产生贡献值。
-领取只代表暂时占用客户。
-只有填写联系记录后才可能进入冷却或转意向。
-
-超时未联系时：
-
-客户自动释放回公海。
-领取人产生：CLAIM_TIMEOUT_PENALTY
-6.4.5 同一个人承担多个身份
-
-MVP 阶段允许同一个人因为不同贡献行为获得多笔贡献值。
-
-例如：
-
-A 上传客户
-A 自己领取
-A 自己转意向
-A 自己成交
-
-可以分别获得：
-
-线索贡献
-转化贡献
-成交贡献
-
-但必须是不同事件、不同流水，不能合并成一条流水。
-
-后续如果客户要求限制同一人重复奖励，再通过贡献值规则配置实现。
-
-6.4.6 幂等规则
-
-贡献值发放必须防止重复触发。
-
-contribution_transaction 必须包含：
-
-idempotency_key
-
-推荐幂等键：
-
-LEAD_INTENT_UPLOADER:{leadId}
-LEAD_INTENT_CONVERTER:{leadId}:{converterId}
-DEAL_CLOSED_OWNER:{orderId}
-DEAL_CLOSED_UPLOADER:{orderId}:{uploaderId}
-CLAIM_TIMEOUT_PENALTY:{claimId}
-
+```text
 同一个 idempotency_key 只能成功生成一条贡献值流水。
+禁止绕过 contribution_transaction 直接修改 contribution_account.current_score。
+```
 
-6.4.7 贡献值流水要求
+MVP 暂不做：
 
-所有贡献值变化必须写入：
-
-contribution_transaction
-
-禁止直接修改：
-
-contribution_account.current_score
-
-正确流程：
-
-业务事件发生
-→ 生成贡献值事件
-→ 检查 idempotency_key 是否已存在
-→ 写 contribution_transaction
-→ 汇总或更新 contribution_account
-
-客户线内部的客户公海、转意向、成单奖励，也必须遵守同一套贡献值事件与流水规则，不允许绕过 contribution_transaction 直接修改 contribution_account。
-
-6.4.8 MVP 暂不做
+```text
 真实工资结算
 复杂奖金审批
 贡献值申诉
@@ -835,6 +767,9 @@ contribution_account.current_score
 团队分成
 跨月结算
 复杂绩效考核
+```
+
+---
 
 ## 7. 工艺路线与生产规则
 
