@@ -27,8 +27,12 @@ class ProductionInstanceMigrationTest {
                 .contains("production_route_instance", "production_step_instance")
                 .doesNotContain(
                         "production_step_checkin",
+                        "file_asset",
                         "inventory_stock",
+                        "inventory",
                         "attendance_record",
+                        "attendance",
+                        "dashboard",
                         "customer",
                         "orders",
                         "order_item",
@@ -62,6 +66,8 @@ class ProductionInstanceMigrationTest {
                 "mobile_enabled",
                 "status",
                 "frozen",
+                "started_by",
+                "completed_by",
                 "deleted",
                 "delete_marker");
     }

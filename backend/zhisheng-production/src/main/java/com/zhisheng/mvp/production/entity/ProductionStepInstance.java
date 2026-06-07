@@ -29,7 +29,9 @@ public class ProductionStepInstance {
     private String status;
     private Boolean frozen;
     private LocalDateTime startedAt;
+    private Long startedBy;
     private LocalDateTime completedAt;
+    private Long completedBy;
     private Long createdBy;
     private LocalDateTime createdAt;
     private Long updatedBy;
@@ -189,12 +191,28 @@ public class ProductionStepInstance {
         this.startedAt = startedAt;
     }
 
+    public Long getStartedBy() {
+        return startedBy;
+    }
+
+    public void setStartedBy(Long startedBy) {
+        this.startedBy = startedBy;
+    }
+
     public LocalDateTime getCompletedAt() {
         return completedAt;
     }
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public Long getCompletedBy() {
+        return completedBy;
+    }
+
+    public void setCompletedBy(Long completedBy) {
+        this.completedBy = completedBy;
     }
 
     public Long getCreatedBy() {
