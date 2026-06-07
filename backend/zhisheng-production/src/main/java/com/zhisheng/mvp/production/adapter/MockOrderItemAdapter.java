@@ -44,6 +44,22 @@ public class MockOrderItemAdapter implements OrderItemReadPort, OrderItemProduct
                 routeInstanceId));
     }
 
+    // TODO: replace with customer-line order_item contract
+    @Override
+    public void updateProductionProgress(
+            Long orderItemId,
+            String productionStatus,
+            BigDecimal productionProgress) {
+        OrderItemProductionContext existing = orderItems.get(orderItemId);
+        if (existing == null) {
+            throw new ProductionDispatchException("ORDER_ITEM_NOT_FOUND");
+        }
+        orderItems.put(orderItemId, existing.withProductionFields(
+                productionStatus,
+                productionProgress,
+                existing.productionRouteInstanceId()));
+    }
+
     public void putDemoOrderItem(OrderItemProductionContext orderItem) {
         orderItems.put(orderItem.id(), orderItem);
     }
