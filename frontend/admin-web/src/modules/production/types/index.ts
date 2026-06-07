@@ -118,3 +118,122 @@ export interface RouteTemplateOption {
   productType: string | null;
   stepCount: number;
 }
+
+export type ProductionWorkOrderStatus =
+  | "DRAFT"
+  | "RELEASED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export interface PageResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface WorkOrderCandidate {
+  orderItemId: number;
+  orderId: number;
+  orderNo: string | null;
+  orderType: string | null;
+  customerType: string | null;
+  dealOwnerId: number | null;
+  dealOwnerName: string | null;
+  itemName: string;
+  spec: string | null;
+  unit: string | null;
+  quantity: number | string | null;
+  remark: string | null;
+  productType: string | null;
+  productionStatus: string;
+  productionProgress: number | string | null;
+  productionRouteInstanceId: number | null;
+  hasActiveWorkOrder: boolean;
+  activeWorkOrderId: number | null;
+  activeWorkOrderNo: string | null;
+}
+
+export interface WorkOrderMaterialPayload {
+  materialId?: number | null;
+  materialCode?: string | null;
+  materialName: string;
+  spec?: string | null;
+  unit?: string | null;
+  requiredQty: number | string;
+  usageStage?: string | null;
+  relatedStepTemplateId?: number | null;
+  relatedStepInstanceId?: number | null;
+  remark?: string | null;
+}
+
+export interface WorkOrderMaterial extends WorkOrderMaterialPayload {
+  id: number;
+  requirementStatus: string;
+  updatedAt: string | null;
+}
+
+export interface WorkOrderBasePayload {
+  priority?: string | null;
+  instructionTitle?: string | null;
+  instructionRemark?: string | null;
+  productionRequirement?: string | null;
+  qualityRequirement?: string | null;
+  packagingRequirement?: string | null;
+  shippingRequirement?: string | null;
+  deliveryRequirement?: string | null;
+  plannedStartDate?: string | null;
+  plannedFinishDate?: string | null;
+  requiredDeliveryDate?: string | null;
+  deadlineRemark?: string | null;
+  equipmentModel?: string | null;
+  technicalConfigSummary?: string | null;
+  technicalConfigRemark?: string | null;
+  technicalConfigJson?: string | null;
+  responsibleUserId?: number | null;
+  handlerUserId?: number | null;
+  productionManagerId?: number | null;
+  primaryWorkerId?: number | null;
+  customerAcceptanceRequired?: boolean;
+  acceptanceRemark?: string | null;
+}
+
+export interface WorkOrderCreatePayload extends WorkOrderBasePayload {
+  orderItemId: number;
+  materials: WorkOrderMaterialPayload[];
+}
+
+export interface WorkOrder extends WorkOrderBasePayload {
+  id: number;
+  workOrderNo: string;
+  orderId: number;
+  orderNo: string | null;
+  orderType: string | null;
+  customerType: string | null;
+  dealOwnerId: number | null;
+  dealOwnerName: string | null;
+  orderItemId: number;
+  orderItemNameSnapshot: string;
+  spec: string | null;
+  unit: string | null;
+  quantitySnapshot: number | string | null;
+  remark: string | null;
+  productTypeSnapshot: string | null;
+  status: ProductionWorkOrderStatus;
+  releasedBy: number | null;
+  releasedAt: string | null;
+  confirmedBy: number | null;
+  confirmedAt: string | null;
+  productionSignedBy: number | null;
+  productionSignedAt: string | null;
+  warehouseConfirmedBy: number | null;
+  warehouseConfirmedAt: string | null;
+  qualityConfirmedBy: number | null;
+  qualityConfirmedAt: string | null;
+  productionRouteInstanceId: number | null;
+  routeLinked: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  materials: WorkOrderMaterial[];
+}

@@ -6,6 +6,7 @@ import RouteTemplateListPage from "@/modules/process/pages/RouteTemplateListPage
 import ProductionOrderItemConfigPage from "@/modules/production/pages/ProductionOrderItemConfigPage.vue";
 import ProductionStepDetailPage from "@/modules/production/pages/ProductionStepDetailPage.vue";
 import ProductionTaskListPage from "@/modules/production/pages/ProductionTaskListPage.vue";
+import ProductionWorkOrderPage from "@/modules/production/pages/ProductionWorkOrderPage.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -33,6 +34,11 @@ export const router = createRouter({
           name: "process-route-template-edit",
           component: RouteTemplateEditPage,
           props: true,
+        },
+        {
+          path: "production/work-orders",
+          name: "production-work-orders",
+          component: ProductionWorkOrderPage,
         },
         {
           path: "production/order-items/:orderItemId/configure",
