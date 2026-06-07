@@ -125,10 +125,12 @@ Transaction draft:
 8. Copy route template/config into `production_route_instance`.
 9. Copy step templates/config into `production_step_instance`.
 10. Set `production_route_instance.frozen = true`.
-11. Link work order to route instance.
+11. Link work order to route instance by setting `production_work_order.production_route_instance_id`.
 12. Set work order status according to the MVP decision.
 13. Restricted update to `order_item` production fields.
 14. Commit transaction.
+
+The MVP transaction must not depend on `production_route_instance.work_order_id`. If that column does not exist, implementation should not add it in this change and must not manually alter the database without a Flyway migration.
 
 If route/step creation, work order link, status update, or order item production write-back fails, the implementation should fail the dispatch transaction. MVP should prefer rollback over partial success. If the real customer-line write-back is outside the database transaction, the implementation must define a retry or compensation strategy before production use.
 
@@ -192,13 +194,21 @@ Required relation after dispatch:
 production_work_order.production_route_instance_id = production_route_instance.id
 ```
 
-If future schema supports:
+MVP relation decision:
+
+- Use `production_work_order.production_route_instance_id` as the source of truth for the route link.
+- Do not add `production_route_instance.work_order_id` in this implementation.
+- Work order list/detail only needs to display the linked `productionRouteInstanceId`.
+- Do not manually change database structure for reverse linking.
+- Do not change table structure without a reviewed Flyway migration.
+
+If future product requirements need reverse lookup from route instance to work order, open a separate OpenSpec and migration for:
 
 ```text
 production_route_instance.work_order_id
 ```
 
-then implementation should set it during dispatch. If the current schema does not support that field, do not create a migration inside this OpenSpec. A later implementation change may decide whether a migration is required.
+That future change may decide whether dispatch should populate the reverse column.
 
 Validation:
 
@@ -223,15 +233,15 @@ productionProgress
 productionRouteInstanceId
 ```
 
-Suggested values after confirm dispatch:
+Write-back values after confirm dispatch:
 
 ```text
-productionStatus = DISPATCHED or existing dispatch-defined initial production status
+productionStatus = existing direct dispatch initial production status
 productionProgress = 0
 productionRouteInstanceId = new route instance id
 ```
 
-If existing dispatch implementation already writes `DISPATCHED`, work-order dispatch should keep that behavior for compatibility.
+Work-order-driven dispatch must reuse the existing legacy direct dispatch production-status write-back rule. Do not invent a new initial `production_status` value for work-order dispatch. If direct dispatch writes `DISPATCHED`, work-order dispatch should also write `DISPATCHED`. If direct dispatch uses another initial status, keep that value. This keeps legacy dispatch and work-order dispatch aligned in `order_item` status semantics.
 
 Work-order dispatch must not update:
 
@@ -256,15 +266,28 @@ Admin work order list/detail may provide:
 - "dispatch production" action only for `RELEASED` work orders with no linked route instance
 - disabled or hidden action for `DRAFT`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`
 - visible route instance link after dispatch
-- navigation to a work-order dispatch page by `workOrderId`
+- dispatch entry keyed by `workOrderId`
 
-Suggested route:
+MVP UI can use a dialog or drawer instead of a dedicated page. The dialog/drawer may:
+
+```text
+open from /production/work-orders list or detail
+load dispatch context by workOrderId
+select process route template
+load template steps
+allow simple step adjustment
+confirm dispatch
+```
+
+The MVP does not require a complex route such as:
 
 ```text
 /production/work-orders/:workOrderId/dispatch
 ```
 
-The dispatch page may reuse the existing dispatch UI patterns:
+That dedicated page is future optional scope if dispatch configuration becomes too large for a dialog/drawer.
+
+The dialog/drawer may reuse existing dispatch UI patterns:
 
 - work order context panel
 - order item read-only context

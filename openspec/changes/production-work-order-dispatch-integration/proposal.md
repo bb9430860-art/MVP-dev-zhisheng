@@ -34,15 +34,18 @@ This change is OpenSpec-only. It does not implement backend code, frontend code,
 - Create `production_route_instance` and `production_step_instance` after confirm dispatch in future implementation.
 - Link the work order and route instance:
   - set `production_work_order.production_route_instance_id`
-  - use `production_route_instance.work_order_id` if the schema later supports it
-  - otherwise keep the work order as the source of the link until a later migration
+  - MVP uses this single-direction link as the default relation
+  - do not add `production_route_instance.work_order_id` in this implementation
+  - if reverse lookup from route instance to work order is later required, open a separate OpenSpec and Flyway migration
 - Prevent repeated dispatch when a work order already has a route instance.
 - Reject dispatch for `DRAFT`, `CANCELLED`, `COMPLETED`, and already-dispatched `IN_PROGRESS` work orders.
 - Define MVP status behavior after dispatch.
 - Recommend MVP Option A: successful dispatch changes work order from `RELEASED` to `IN_PROGRESS`.
 - Allow restricted production write-back to `order_item` only after successful dispatch.
+- Reuse the existing direct dispatch `order_item.production_status` write-back value instead of inventing a new initial status.
 - Keep the legacy direct `order_item -> production_route_instance` dispatch path as transition-only.
 - Provide admin-web design for a "dispatch production" entry from work order list/detail.
+- Allow admin-web MVP to use a dispatch dialog or drawer by `workOrderId` instead of requiring a complex dedicated dispatch page.
 - Prepare a clean handoff to future inventory/material-readiness.
 
 ## Non-Goals
@@ -54,6 +57,7 @@ This change does not implement:
 - admin-web pages
 - Vue or TypeScript files
 - database migration
+- `production_route_instance.work_order_id` migration unless a later separate change approves it
 - production route graph tables
 - inventory deduction
 - inventory reservation
@@ -111,6 +115,13 @@ frontend/admin-web production module
 ```
 
 Future implementation may add work-order dispatch API/service methods and admin-web navigation from work order detail/list to dispatch. It must not implement inventory/material-readiness in this change.
+
+MVP implementation scope should prefer:
+
+- `production_work_order.production_route_instance_id` as the single-direction relation to route instance
+- no `production_route_instance.work_order_id` schema change
+- admin-web dispatch dialog/drawer from work order list/detail
+- existing dispatch production-status write-back semantics
 
 ## Collaboration Boundaries
 

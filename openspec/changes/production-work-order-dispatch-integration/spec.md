@@ -83,12 +83,14 @@ The system SHALL link the work order and production route instance after work-or
 - THEN `production_work_order.production_route_instance_id` is set to the new route instance id
 - AND later work order pages can show the linked production instance
 
-#### Scenario: Route instance can trace back to work order
+#### Scenario: MVP links route instance from work order without adding route work order column
 
-- WHEN schema supports `production_route_instance.work_order_id`
-- THEN dispatch should store the work order id on the route instance
-- AND if schema does not support it yet, a later migration design may add it
-- AND this OpenSpec does not create that migration
+- WHEN MVP work-order-driven dispatch is implemented
+- THEN the primary relation is `production_work_order.production_route_instance_id`
+- AND implementation does not add `production_route_instance.work_order_id`
+- AND work order list/detail can show the linked `productionRouteInstanceId`
+- AND reverse lookup from route instance to work order requires a later OpenSpec and migration
+- AND no table structure is changed without Flyway migration
 
 #### Scenario: Same tenant and same order item are required
 
@@ -137,6 +139,14 @@ The system SHALL restrict order item write-back during work-order-driven dispatc
 - AND production progress starts at `0`
 - AND route instance id is the newly created route instance id
 
+#### Scenario: Work-order dispatch reuses existing direct dispatch production status write-back value
+
+- GIVEN existing direct `order_item` dispatch writes an initial production status after dispatch
+- WHEN work-order-driven dispatch succeeds
+- THEN it writes the same initial `production_status` value
+- AND does not invent a separate work-order dispatch status value
+- AND if existing direct dispatch writes `DISPATCHED`, work-order dispatch also writes `DISPATCHED`
+
 #### Scenario: Do not modify order core fields
 
 - WHEN dispatch succeeds
@@ -171,6 +181,19 @@ The system SHALL design an admin-web dispatch entry from production work orders.
 - WHEN work-order-driven dispatch succeeds
 - THEN admin-web shows the linked route instance id or navigation
 - AND no batch dispatch is performed
+
+#### Scenario: Admin can dispatch from work order dialog or drawer
+
+- GIVEN a `RELEASED` work order has no linked route instance
+- WHEN an admin clicks "dispatch production"
+- THEN MVP may open a dialog or drawer keyed by `workOrderId`
+- AND the admin may select a process route template, load template steps, make simple step adjustments, and confirm dispatch
+
+#### Scenario: Dedicated dispatch page is future optional scope
+
+- WHEN dispatch configuration becomes too complex for a dialog or drawer
+- THEN a later OpenSpec may design a dedicated `/production/work-orders/:workOrderId/dispatch` page
+- AND this change does not require that page for MVP
 
 ### Requirement: Preserve legacy dispatch compatibility
 
@@ -238,8 +261,10 @@ The system SHALL keep nested and parallel process graph behavior out of this cha
 - Existing direct dispatch is documented as legacy/transition.
 - Status rules for `DRAFT`, `RELEASED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED` are documented.
 - MVP status update rule `RELEASED -> IN_PROGRESS` on successful dispatch is documented.
-- Work order to route instance linking is documented.
+- MVP single-direction work order to route instance linking is documented.
+- No `production_route_instance.work_order_id` migration is required by this change.
 - Restricted order item production write-back is documented.
+- Reuse of existing direct dispatch production-status write-back value is documented.
 - Inventory, material readiness, shortage checks, reservation, deduction, stock in/out, purchase, supplier, and finance are excluded.
 - CRM, public pool, contribution, order creation, and order core mutation are excluded.
 - Batch dispatch and print/PDF are excluded.

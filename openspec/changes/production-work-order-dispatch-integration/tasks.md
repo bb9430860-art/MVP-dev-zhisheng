@@ -72,14 +72,19 @@ DoD:
 Steps:
 
 - Define setting `production_work_order.production_route_instance_id`.
-- Define optional future `production_route_instance.work_order_id`.
+- Define MVP single-direction linking through `production_work_order.production_route_instance_id`.
+- Define that MVP does not add `production_route_instance.work_order_id`.
+- Define optional future `production_route_instance.work_order_id` only through a separate OpenSpec and Flyway migration.
 - Define same tenant, same order id, and same order item validation.
 - Define route link conflict error.
-- Clarify whether migration is future implementation decision, not this OpenSpec.
+- Clarify that no migration is created for reverse linking in this change.
+- Clarify that manual database structure changes are forbidden.
 
 DoD:
 
 - Link direction is documented.
+- MVP single-direction relation is documented.
+- No `production_route_instance.work_order_id` migration is required by this change.
 - Schema limitations are handled without creating migration in this change.
 - `WORK_ORDER_ROUTE_LINK_CONFLICT` is documented.
 
@@ -89,7 +94,8 @@ Steps:
 
 - Document customer-line restricted write-back contract.
 - Allow only `productionStatus`, `productionProgress`, and `productionRouteInstanceId`.
-- Define suggested dispatch values.
+- Define that work-order dispatch must reuse existing direct dispatch initial `production_status` write-back value.
+- Define that no new work-order-specific initial production status is invented.
 - Exclude item name, spec, unit, quantity, unit price, subtotal, remark, customer fields, order amount, quotation, and order core status.
 - Define write-back failure behavior.
 
@@ -97,6 +103,7 @@ DoD:
 
 - `design.md` contains write-back boundary.
 - `spec.md` includes restricted write-back scenarios.
+- Existing dispatch status semantics are reused.
 - Order core mutation remains forbidden.
 
 ## Task 7: Define admin-web dispatch entry
@@ -106,13 +113,16 @@ Steps:
 - Define "dispatch production" action on work order list/detail.
 - Show action only for `RELEASED` work orders without route link.
 - Hide or disable action for other statuses.
-- Define work-order-first dispatch page route.
+- Define MVP dialog/drawer dispatch entry keyed by `workOrderId`.
+- Define template selection, template step loading, simple step adjustment, and confirm dispatch inside the dialog/drawer.
+- Mark a dedicated dispatch page as future optional scope.
 - Define route instance link display after dispatch.
 - Exclude batch dispatch and print/PDF.
 
 DoD:
 
 - Admin interaction draft exists.
+- Dialog/drawer MVP approach is documented.
 - UI status rules are documented.
 - No frontend file is created by this OpenSpec.
 
@@ -192,6 +202,7 @@ Steps:
   - `spec.md`
   - `tasks.md`
 - Run `git status --short --untracked-files=all`.
+- Run `git diff --name-only`.
 - Confirm only the four OpenSpec md files appear.
 - Confirm no `.java`, `.sql`, `.vue`, `.ts`, `pom.xml`, or `package.json` changes appear.
 - Confirm no implementation completion is claimed.
