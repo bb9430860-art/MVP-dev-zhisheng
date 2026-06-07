@@ -65,6 +65,53 @@ export interface ProductionSummary {
   frozen: boolean;
 }
 
+export type ProductionStepStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED";
+
+export interface ProductionTask {
+  stepInstanceId: number;
+  routeInstanceId: number;
+  orderId: number;
+  orderItemId: number;
+  itemName: string | null;
+  stepName: string;
+  stepOrder: number;
+  assignedRole: string;
+  assignedUserId: number | null;
+  status: ProductionStepStatus;
+  photoRequired: boolean;
+  remarkRequired: boolean;
+  mobileEnabled: boolean;
+  canStart: boolean;
+  canComplete: boolean;
+}
+
+export interface ProductionStepDetail extends ProductionTask {
+  sourceStepTemplateId: number | null;
+  stepCodeSnapshot: string | null;
+  estimatedHours: number | string | null;
+  operationInstruction: string | null;
+  frozen: boolean;
+  startedAt: string | null;
+  startedBy: number | null;
+  completedAt: string | null;
+  completedBy: number | null;
+}
+
+export interface ProductionStepExecutionResult {
+  stepInstanceId: number;
+  routeInstanceId: number;
+  status: ProductionStepStatus;
+  productionProgress: number;
+}
+
+export interface ProductionProgress {
+  routeInstanceId: number;
+  totalSteps: number;
+  completedSteps: number;
+  progress: number;
+  routeStatus: string;
+}
+
 export interface RouteTemplateOption {
   id: number;
   routeName: string;

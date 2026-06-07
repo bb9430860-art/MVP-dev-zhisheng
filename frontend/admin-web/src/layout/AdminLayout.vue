@@ -11,6 +11,10 @@
           <el-icon><Operation /></el-icon>
           <span>生产下发配置</span>
         </el-menu-item>
+        <el-menu-item index="/production/tasks">
+          <el-icon><List /></el-icon>
+          <span>生产任务执行</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -25,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { Operation, Tickets } from "@element-plus/icons-vue";
+import { List, Operation, Tickets } from "@element-plus/icons-vue";
 </script>
 
 <style scoped>

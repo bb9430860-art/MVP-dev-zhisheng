@@ -2,6 +2,7 @@ package com.zhisheng.mvp.production.web;
 
 import com.zhisheng.mvp.common.ApiResponse;
 import com.zhisheng.mvp.production.exception.ProductionDispatchException;
+import com.zhisheng.mvp.production.exception.ProductionStepExecutionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,6 +13,12 @@ public class ProductionExceptionHandler {
 
     @ExceptionHandler(ProductionDispatchException.class)
     public ResponseEntity<ApiResponse<Void>> handleProductionDispatch(ProductionDispatchException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(exception.getMessage()));
+    }
+
+    @ExceptionHandler(ProductionStepExecutionException.class)
+    public ResponseEntity<ApiResponse<Void>> handleProductionStepExecution(
+            ProductionStepExecutionException exception) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(exception.getMessage()));
     }
 

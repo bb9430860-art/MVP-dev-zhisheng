@@ -23,3 +23,9 @@ export const assignedRoleLabels: Record<string, string> = {
   WAREHOUSE: "仓库",
   INSTALLER: "安装",
 };
+
+export const productionStepStatusLabels: Record<string, string> = {
+  PENDING: "待开始",
+  IN_PROGRESS: "进行中",
+  COMPLETED: "已完成",
+};
