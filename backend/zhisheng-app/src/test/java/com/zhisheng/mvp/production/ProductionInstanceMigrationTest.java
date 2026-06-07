@@ -24,9 +24,8 @@ class ProductionInstanceMigrationTest {
         Set<String> tables = tableNames();
 
         assertThat(tables)
-                .contains("production_route_instance", "production_step_instance")
+                .contains("production_route_instance", "production_step_instance", "production_step_checkin")
                 .doesNotContain(
-                        "production_step_checkin",
                         "file_asset",
                         "inventory_stock",
                         "inventory",
@@ -68,6 +67,18 @@ class ProductionInstanceMigrationTest {
                 "frozen",
                 "started_by",
                 "completed_by",
+                "deleted",
+                "delete_marker");
+
+        assertThat(columns("production_step_checkin")).contains(
+                "step_instance_id",
+                "route_instance_id",
+                "order_id",
+                "order_item_id",
+                "operator_id",
+                "checkin_type",
+                "remark",
+                "file_ids_json",
                 "deleted",
                 "delete_marker");
     }
