@@ -3,6 +3,7 @@ package com.zhisheng.mvp.production.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhisheng.mvp.production.dto.ProductionProgressResponse;
+import com.zhisheng.mvp.production.dto.ProductionStepDetailResponse;
 import com.zhisheng.mvp.production.dto.ProductionStepExecutionResponse;
 import com.zhisheng.mvp.production.dto.ProductionTaskResponse;
 import com.zhisheng.mvp.production.entity.ProductionRouteInstance;
@@ -12,12 +13,16 @@ import com.zhisheng.mvp.production.mapper.ProductionRouteInstanceMapper;
 import com.zhisheng.mvp.production.mapper.ProductionStepInstanceMapper;
 import com.zhisheng.mvp.production.port.CurrentProductionUserContext;
 import com.zhisheng.mvp.production.port.CurrentProductionUserPort;
+import com.zhisheng.mvp.production.port.OrderItemProductionContext;
 import com.zhisheng.mvp.production.port.OrderItemProductionPort;
+import com.zhisheng.mvp.production.port.OrderItemReadPort;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -38,16 +43,19 @@ public class ProductionStepExecutionService {
     private final ProductionStepInstanceMapper stepInstanceMapper;
     private final CurrentProductionUserPort currentProductionUserPort;
     private final OrderItemProductionPort orderItemProductionPort;
+    private final OrderItemReadPort orderItemReadPort;
 
     public ProductionStepExecutionService(
             ProductionRouteInstanceMapper routeInstanceMapper,
             ProductionStepInstanceMapper stepInstanceMapper,
             CurrentProductionUserPort currentProductionUserPort,
-            OrderItemProductionPort orderItemProductionPort) {
+            OrderItemProductionPort orderItemProductionPort,
+            OrderItemReadPort orderItemReadPort) {
         this.routeInstanceMapper = routeInstanceMapper;
         this.stepInstanceMapper = stepInstanceMapper;
         this.currentProductionUserPort = currentProductionUserPort;
         this.orderItemProductionPort = orderItemProductionPort;
+        this.orderItemReadPort = orderItemReadPort;
     }
 
     @Transactional(readOnly = true)
@@ -57,7 +65,6 @@ public class ProductionStepExecutionService {
                 new LambdaQueryWrapper<ProductionStepInstance>()
                         .eq(ProductionStepInstance::getTenantId, currentUser.tenantId())
                         .eq(ProductionStepInstance::getAssignedUserId, currentUser.currentUserId())
-                        .eq(ProductionStepInstance::getStatus, STEP_STATUS_PENDING)
                         .eq(ProductionStepInstance::getDeleted, false));
         List<ProductionStepInstance> roleTasks = currentUser.roles().isEmpty()
                 ? Collections.emptyList()
@@ -67,8 +74,17 @@ public class ProductionStepExecutionService {
                         .in(ProductionStepInstance::getAssignedRole, currentUser.roles())
                         .eq(ProductionStepInstance::getStatus, STEP_STATUS_PENDING)
                         .eq(ProductionStepInstance::getDeleted, false));
+        List<ProductionStepInstance> claimedRoleTasks = stepInstanceMapper.selectList(
+                new LambdaQueryWrapper<ProductionStepInstance>()
+                        .eq(ProductionStepInstance::getTenantId, currentUser.tenantId())
+                        .isNull(ProductionStepInstance::getAssignedUserId)
+                        .eq(ProductionStepInstance::getStartedBy, currentUser.currentUserId())
+                        .in(ProductionStepInstance::getStatus, List.of(STEP_STATUS_IN_PROGRESS, STEP_STATUS_COMPLETED))
+                        .eq(ProductionStepInstance::getDeleted, false));
 
-        return java.util.stream.Stream.concat(assignedTasks.stream(), roleTasks.stream())
+        Map<Long, ProductionStepInstance> taskById = new LinkedHashMap<>();
+        java.util.stream.Stream.of(assignedTasks, roleTasks, claimedRoleTasks)
+                .flatMap(List::stream)
                 .filter(step -> {
                     ProductionRouteInstance route = routeInstanceMapper.selectById(step.getRouteInstanceId());
                     return route != null
@@ -76,10 +92,21 @@ public class ProductionStepExecutionService {
                             && Boolean.TRUE.equals(route.getFrozen())
                             && !Boolean.TRUE.equals(route.getDeleted());
                 })
+                .forEach(step -> taskById.put(step.getId(), step));
+
+        return taskById.values().stream()
                 .sorted(Comparator.comparing(ProductionStepInstance::getStepOrder)
                         .thenComparing(ProductionStepInstance::getId))
                 .map(this::toTaskResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ProductionStepDetailResponse stepDetail(Long stepInstanceId) {
+        CurrentProductionUserContext currentUser = currentProductionUserPort.currentUser();
+        ProductionStepInstance step = requiredStep(stepInstanceId, currentUser.tenantId());
+        requiredFrozenRoute(step.getRouteInstanceId(), currentUser.tenantId());
+        return toStepDetailResponse(currentUser, step);
     }
 
     @Transactional
@@ -283,12 +310,69 @@ public class ProductionStepExecutionService {
         return new ProductionTaskResponse(
                 step.getId(),
                 step.getRouteInstanceId(),
+                step.getOrderId(),
                 step.getOrderItemId(),
+                itemName(step.getOrderItemId()),
                 step.getStepName(),
                 step.getStepOrder(),
                 step.getAssignedRole(),
                 step.getAssignedUserId(),
-                step.getStatus());
+                step.getStatus(),
+                step.getPhotoRequired(),
+                step.getRemarkRequired(),
+                step.getMobileEnabled(),
+                canStart(currentProductionUserPort.currentUser(), step),
+                canComplete(currentProductionUserPort.currentUser(), step));
+    }
+
+    private ProductionStepDetailResponse toStepDetailResponse(
+            CurrentProductionUserContext currentUser,
+            ProductionStepInstance step) {
+        return new ProductionStepDetailResponse(
+                step.getId(),
+                step.getRouteInstanceId(),
+                step.getOrderId(),
+                step.getOrderItemId(),
+                itemName(step.getOrderItemId()),
+                step.getSourceStepTemplateId(),
+                step.getStepCodeSnapshot(),
+                step.getStepName(),
+                step.getStepOrder(),
+                step.getAssignedRole(),
+                step.getAssignedUserId(),
+                step.getPhotoRequired(),
+                step.getRemarkRequired(),
+                step.getMobileEnabled(),
+                step.getEstimatedHours(),
+                step.getOperationInstruction(),
+                step.getStatus(),
+                step.getFrozen(),
+                step.getStartedAt(),
+                step.getStartedBy(),
+                step.getCompletedAt(),
+                step.getCompletedBy(),
+                canStart(currentUser, step),
+                canComplete(currentUser, step));
+    }
+
+    private String itemName(Long orderItemId) {
+        return orderItemReadPort.findById(orderItemId)
+                .map(OrderItemProductionContext::itemName)
+                .orElse(null);
+    }
+
+    private boolean canStart(CurrentProductionUserContext currentUser, ProductionStepInstance step) {
+        return STEP_STATUS_PENDING.equals(step.getStatus()) && canExecutePendingStep(currentUser, step);
+    }
+
+    private boolean canComplete(CurrentProductionUserContext currentUser, ProductionStepInstance step) {
+        if (!STEP_STATUS_IN_PROGRESS.equals(step.getStatus())) {
+            return false;
+        }
+        if (step.getAssignedUserId() == null) {
+            return Objects.equals(step.getStartedBy(), currentUser.currentUserId());
+        }
+        return Objects.equals(step.getAssignedUserId(), currentUser.currentUserId());
     }
 
     private int toIntProgress(BigDecimal progress) {

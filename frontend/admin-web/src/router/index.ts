@@ -4,6 +4,8 @@ import AdminLayout from "@/layout/AdminLayout.vue";
 import RouteTemplateEditPage from "@/modules/process/pages/RouteTemplateEditPage.vue";
 import RouteTemplateListPage from "@/modules/process/pages/RouteTemplateListPage.vue";
 import ProductionOrderItemConfigPage from "@/modules/production/pages/ProductionOrderItemConfigPage.vue";
+import ProductionStepDetailPage from "@/modules/production/pages/ProductionStepDetailPage.vue";
+import ProductionTaskListPage from "@/modules/production/pages/ProductionTaskListPage.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -36,6 +38,17 @@ export const router = createRouter({
           path: "production/order-items/:orderItemId/configure",
           name: "production-order-item-configure",
           component: ProductionOrderItemConfigPage,
+          props: true,
+        },
+        {
+          path: "production/tasks",
+          name: "production-tasks",
+          component: ProductionTaskListPage,
+        },
+        {
+          path: "production/step-instances/:stepInstanceId",
+          name: "production-step-detail",
+          component: ProductionStepDetailPage,
           props: true,
         },
       ],
