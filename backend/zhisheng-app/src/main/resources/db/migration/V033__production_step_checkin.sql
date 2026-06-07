@@ -1,0 +1,20 @@
+CREATE TABLE production_step_checkin (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    step_instance_id BIGINT NOT NULL,
+    route_instance_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    order_item_id BIGINT NOT NULL,
+    operator_id BIGINT NOT NULL,
+    checkin_type VARCHAR(32) NOT NULL,
+    remark VARCHAR(1000) NULL,
+    file_ids_json VARCHAR(512) NULL,
+    created_by BIGINT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0,
+    delete_marker BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    KEY idx_production_checkin_step (tenant_id, step_instance_id, deleted),
+    KEY idx_production_checkin_route (tenant_id, route_instance_id, deleted),
+    KEY idx_production_checkin_order_item (tenant_id, order_item_id, deleted)
+);
