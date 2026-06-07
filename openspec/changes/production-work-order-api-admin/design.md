@@ -27,6 +27,149 @@ order_item
 
 This change does not refactor existing `production-dispatch-instance`.
 
+## Order Contract Integration
+
+Customer line provides an order contract based on `project_order` and `order_item`.
+
+`project_order`:
+
+```text
+id
+tenant_id
+customer_id
+source_lead_id
+deal_owner_id
+deal_amount
+deal_status
+order_no
+order_type
+customer_type
+deal_at
+created_at
+updated_at
+```
+
+`order_item`:
+
+```text
+id
+tenant_id
+order_id
+item_name
+spec
+unit
+quantity
+unit_price
+subtotal
+remark
+product_type
+production_status
+production_progress
+production_route_instance_id
+production_started_at
+completed_at
+created_at
+updated_at
+```
+
+Available or planned customer-line APIs:
+
+```http
+GET /api/order/list
+GET /api/order/{id}
+GET /api/order-items?orderId=xxx
+GET /api/order-items/{id}
+PUT /api/order-items/{id}
+```
+
+Production work order design must treat this contract carefully:
+
+- `project_order + N order_item` is an order summary view and candidate source.
+- It is not the production work order model.
+- `production_work_order` is not a wrapper for the whole order and all items.
+- MVP creates one work order from one `order_item`.
+- The production chain remains `order_item -> production_work_order -> production_route_instance -> production_step_instance`.
+- Batch work order creation and batch dispatch are future scope.
+- Production instruction print/PDF is future scope.
+
+### What Production May Read
+
+The production work order candidate API may read these order-side fields:
+
+```text
+order_id
+order_no
+order_type
+customer_type
+deal_owner_id or dealOwnerName
+order_item.id
+item_name
+spec
+unit
+quantity
+remark
+product_type
+production_status
+production_progress
+production_route_instance_id
+```
+
+These fields are read-only context for selecting an `order_item` and creating production-side snapshots.
+
+### What Production Must Not Store Or Show By Default
+
+Commercial and financial fields remain customer/order/finance scope:
+
+```text
+deal_amount
+unit_price
+subtotal
+```
+
+Rules:
+
+- They do not enter `production_work_order` MVP.
+- They are not work order edit fields.
+- Production line must not modify them.
+- Admin work order pages should not show them by default.
+- If a later boss dashboard needs amount metrics, it should read order-line aggregation instead of copying amounts into `production_work_order`.
+
+### Work Order Snapshot Guidance
+
+`production_work_order` may store production-required snapshots:
+
+```text
+order_id
+order_item_id
+order_no_snapshot optional
+item_name_snapshot
+spec_snapshot future optional if backend core does not already support it
+unit_snapshot future optional
+quantity_snapshot
+product_type_snapshot
+remark_snapshot future optional
+```
+
+Existing backend core fields should be reused first. Future optional snapshot fields require a later implementation and migration change if they are not already present.
+
+### What Production May Write Back And Which Change Owns It
+
+Customer line's restricted endpoint:
+
+```http
+PUT /api/order-items/{id}
+```
+
+allows production write-back only for:
+
+```text
+productionStatus
+productionProgress
+productionRouteInstanceId
+```
+
+This write-back belongs to dispatch, execution, and progress synchronization changes. `production-work-order-api-admin` must not call it when creating, editing, releasing, or cancelling a work order.
+
 ## API Design Draft
 
 All API shapes are drafts for later implementation and should use the project's shared authentication, tenant, current user, and response conventions.
@@ -40,6 +183,7 @@ GET /api/production/work-orders/order-items/candidates
 Purpose:
 
 - Read order items that production may turn into work orders.
+- Optionally include order summary context from `project_order`.
 - Mark whether an order item already has an active work order.
 - Avoid order creation or order core mutation.
 
@@ -50,6 +194,9 @@ keyword
 productType
 productionStatus
 hasActiveWorkOrder
+orderNo
+orderType
+customerType
 page
 pageSize
 ```
@@ -62,9 +209,17 @@ Response data draft:
     {
       "orderItemId": 1001,
       "orderId": 501,
+      "orderNo": "ORD-20260607-001",
+      "orderType": "PROJECT",
+      "customerType": "ENTERPRISE",
+      "dealOwnerId": 21,
+      "dealOwnerName": "业务员A",
       "itemName": "入口精神堡垒",
+      "spec": "3000mm x 1200mm",
+      "unit": "套",
       "productType": "SPIRIT_FORTRESS",
       "quantity": 1,
+      "remark": "入口主标识",
       "productionStatus": "NOT_DISPATCHED",
       "productionProgress": 0,
       "productionRouteInstanceId": null,
@@ -80,9 +235,12 @@ Response data draft:
 Rules:
 
 - Query is production-side read-only.
+- The API may aggregate `project_order` summary and `order_item` rows for candidate display.
+- The API must not treat one order with many order items as one production work order.
 - Existing active work order may be shown as disabled or marked with `hasActiveWorkOrder = true`.
 - Active statuses are `DRAFT`, `RELEASED`, and `IN_PROGRESS`.
 - Duplicate create must return `WORK_ORDER_ALREADY_EXISTS_FOR_ORDER_ITEM`.
+- `deal_amount`, `unit_price`, and `subtotal` should not be returned by default.
 
 ### Create Work Order From Order Item
 
@@ -150,8 +308,10 @@ Rules:
 
 - Creates a `DRAFT` work order.
 - Reads order item snapshot through production read contract.
+- May copy production-required snapshots such as order no, item name, spec, unit, quantity, product type, and remark where supported.
 - Does not create a route instance.
 - Does not modify order amount, quotation, customer, spec, quantity, or order core status.
+- Does not call `PUT /api/order-items/{id}`.
 - Does not reserve or deduct inventory.
 
 ### List Work Orders
@@ -183,10 +343,14 @@ Response row draft:
   "id": 5001,
   "workOrderNo": "WO-20260607-0001",
   "orderId": 501,
+  "orderNoSnapshot": "ORD-20260607-001",
   "orderItemId": 1001,
   "orderItemNameSnapshot": "入口精神堡垒",
+  "specSnapshot": "future optional",
+  "unitSnapshot": "future optional",
   "productTypeSnapshot": "SPIRIT_FORTRESS",
   "quantitySnapshot": 1,
+  "remarkSnapshot": "future optional",
   "status": "DRAFT",
   "priority": "NORMAL",
   "plannedStartDate": "2026-06-08",
@@ -218,6 +382,7 @@ Response includes:
 - material requirement lines
 - `production_route_instance_id`
 - route link state
+- optional order summary display fields if stored as snapshots or loaded read-only from order APIs
 
 ### Update Draft Work Order
 
@@ -352,6 +517,7 @@ Capabilities:
 - Search by product/location keyword.
 - Filter by date range.
 - Show route linked or not.
+- Show order no if available as a snapshot or read-only order summary.
 - Create work order entry.
 - View detail.
 - Edit DRAFT.
@@ -365,6 +531,7 @@ Capabilities:
 Sections:
 
 - basic work order identity
+- order summary read-only context such as order no, order type, and customer type when available
 - order item snapshot
 - production instruction
 - technical configuration
@@ -381,12 +548,13 @@ Sections:
 2. User clicks "create from order item".
 3. UI opens an order item candidate selector.
 4. User selects one readable order item.
-5. UI displays order item snapshot fields.
+5. UI displays order summary and order item snapshot fields.
 6. User fills production instruction, technical configuration, dates, and responsible people.
 7. User adds demand-only material requirement rows.
 8. User saves.
 9. Backend creates `DRAFT` work order.
 10. If an active work order exists, UI shows `WORK_ORDER_ALREADY_EXISTS_FOR_ORDER_ITEM`.
+11. UI does not call order-item production write-back.
 
 ### Material Requirement Editor
 
@@ -481,6 +649,8 @@ view production instance placeholder
 
 Work-order-driven dispatch requires a later OpenSpec change.
 
+Batch work order creation and batch dispatch are also future scope. This API/admin design creates one work order from one order item.
+
 ## Inventory Boundary
 
 Material requirements in admin-web are demand-only.
@@ -505,6 +675,17 @@ Future `inventory/material-readiness` owns available quantity, shortage, optiona
 
 The API may read `order_item` candidates through production-side contracts.
 
+The API may also read `project_order` summary fields for candidate display:
+
+```text
+order_no
+order_type
+customer_type
+deal_owner_id or dealOwnerName
+```
+
+This is read-only context. It does not make `project_order + N order_item` the production work order model.
+
 It must not:
 
 - create orders
@@ -514,11 +695,26 @@ It must not:
 - modify product specification
 - modify product quantity
 - modify order core status
+- store or show `deal_amount`, `unit_price`, or `subtotal` by default
+- call restricted `PUT /api/order-items/{id}` from work order create/edit/release/cancel flows
 - implement CRM
 - implement customer public pool
 - implement contribution
 
 Order item snapshot fields stored in the work order are production display context only.
+
+The restricted `PUT /api/order-items/{id}` production write-back is owned by dispatch/execution/progress changes. Only those later or existing changes may update `productionStatus`, `productionProgress`, or `productionRouteInstanceId`.
+
+## Batch And Print Boundary
+
+This change does not design implementation for:
+
+- batch work order creation
+- batch dispatch
+- production instruction print
+- production instruction PDF export
+
+These may be future OpenSpec changes after single-item work order API/admin is stable.
 
 ## Test Plan Draft
 
@@ -539,10 +735,13 @@ Future implementation tests should cover:
 - reject cancel IN_PROGRESS and COMPLETED
 - no inventory transaction creation
 - no order core mutation
+- no commercial amount field storage or default display
+- no work-order create/edit/release/cancel call to `PUT /api/order-items/{id}`
 - link route instance conflict by tenant/order item
 - no route frozen structure mutation
+- one order item creates one work order; no batch dispatch behavior
 - admin UI action visibility by status
 
 ## Out Of Scope
 
-This OpenSpec does not implement backend code, Controller APIs, Mapper/Service/Entity changes, migration, admin-web files, TypeScript APIs, route/menu changes, frontend apps, inventory, purchase, supplier, finance, CRM, public pool, contribution, order creation, order core mutation, dispatch refactor, route instance creation, route freezing, nested/parallel graph, photo upload, file upload, worker-uniapp, production-h5, screen-web, attendance, or dashboard.
+This OpenSpec does not implement backend code, Controller APIs, Mapper/Service/Entity changes, migration, admin-web files, TypeScript APIs, route/menu changes, frontend apps, inventory, purchase, supplier, finance, CRM, public pool, contribution, order creation, order core mutation, commercial amount storage, restricted order-item production write-back, batch work order creation, batch dispatch, production instruction print/PDF, dispatch refactor, route instance creation, route freezing, nested/parallel graph, photo upload, file upload, worker-uniapp, production-h5, screen-web, attendance, or dashboard.

@@ -33,6 +33,15 @@ The system SHALL provide production work order API designs for managing producti
 - AND uses the backend-generated `WO-{yyyyMMdd}-{dailySequence}` work order number
 - AND may save material requirement lines
 - AND does not create a production route instance
+- AND does not call restricted `PUT /api/order-items/{id}`
+
+#### Scenario: Create only one work order for one order item
+
+- GIVEN `project_order` may contain many `order_item` rows
+- WHEN production creates a work order in this MVP flow
+- THEN it creates one `production_work_order` for one selected `order_item`
+- AND does not create a single work order for `project_order + N order_item`
+- AND does not implement batch work order creation
 
 #### Scenario: Reject duplicate active work order
 
@@ -82,12 +91,29 @@ The system SHALL design a production-side read API for order item candidates tha
 - WHEN a user queries `GET /api/production/work-orders/order-items/candidates`
 - THEN the API returns order item fields needed for production work order creation
 - AND includes `order_item.id`, `order_id`, item name, product type, quantity, production status, progress, and route instance id when available
+- AND may include read-only order summary fields such as order number, order type, customer type, and deal owner
 - AND does not expose order editing behavior
+
+#### Scenario: Read project order summary as candidate context
+
+- GIVEN customer line provides `project_order`
+- WHEN the candidate list needs order context
+- THEN production may read `order_id`, `order_no`, `order_type`, `customer_type`, and `deal_owner_id` or `dealOwnerName`
+- AND uses them only as selection and display context
+- AND does not treat `project_order` as the production work order
 
 #### Scenario: Do not mutate order core fields
 
 - WHEN candidates are listed or used to create a work order
 - THEN the system does not mutate order amount, quotation, customer information, product specification, product quantity, or order core status
+
+#### Scenario: Do not expose commercial amount fields by default
+
+- GIVEN order-side fields include `deal_amount`, `unit_price`, and `subtotal`
+- WHEN the production work order candidate API or admin page is used
+- THEN those fields are not returned or shown by default
+- AND they are not stored in `production_work_order` MVP
+- AND they are not editable by production users
 
 #### Scenario: Hide or mark order item with existing active work order
 
@@ -221,6 +247,19 @@ The system SHALL preserve the boundary between work order API/admin management a
 - THEN existing `production-dispatch-instance` remains unchanged
 - AND work-order-driven dispatch requires a separate later change
 
+#### Scenario: Order item production write-back belongs to dispatch or execution
+
+- GIVEN customer line exposes restricted `PUT /api/order-items/{id}` for `productionStatus`, `productionProgress`, and `productionRouteInstanceId`
+- WHEN a work order is created, edited, released, or cancelled in this API/admin change
+- THEN this change does not call that write-back endpoint
+- AND only production dispatch, step execution, or progress synchronization changes may use that write-back boundary
+
+#### Scenario: No batch dispatch
+
+- WHEN this API/admin change is designed
+- THEN it does not implement batch dispatch
+- AND batch work order creation or batch dispatch requires a separate future change
+
 ### Requirement: Preserve inventory boundary
 
 The system SHALL preserve the boundary between material requirements and inventory/material-readiness.
@@ -255,6 +294,14 @@ The system SHALL preserve the boundary between material requirements and invento
 
 The system SHALL preserve customer-line and order-line ownership.
 
+#### Scenario: Integrate customer-line order contract
+
+- GIVEN customer line provides `project_order` and `order_item`
+- WHEN production designs candidate and work order API surfaces
+- THEN it treats `project_order + N order_item` as an order summary and candidate source
+- AND does not treat it as the production work order main model
+- AND keeps the main flow as `order_item -> production_work_order -> production_route_instance -> production_step_instance`
+
 #### Scenario: Only read order item
 
 - WHEN production lists candidates or creates a work order
@@ -270,10 +317,46 @@ The system SHALL preserve customer-line and order-line ownership.
 - WHEN work orders are created, edited, released, cancelled, or linked
 - THEN the system does not modify order amount, quotation, customer information, product specification, product quantity, or order core lifecycle status
 
+#### Scenario: Production work order snapshots are production context only
+
+- WHEN a work order stores order-side snapshot values
+- THEN it may store production-required fields such as `order_id`, `order_item_id`, optional `order_no_snapshot`, item name, optional spec, optional unit, quantity, product type, and optional remark
+- AND these snapshots are not the order-line source of truth
+- AND optional snapshot fields require a later implementation/migration change if backend core does not already support them
+
+#### Scenario: Commercial fields stay out of production work order MVP
+
+- WHEN order-side records contain `deal_amount`, `unit_price`, or `subtotal`
+- THEN production work order MVP does not store them
+- AND the admin work order page does not show them by default
+- AND production users cannot edit them
+
 #### Scenario: No CRM public pool or contribution
 
 - WHEN implementing work order API/admin in the future
 - THEN the implementation must not add CRM, customer public pool, or contribution value logic
+
+### Requirement: Keep batch and print features out of this change
+
+The system SHALL keep batch dispatch and production instruction print/PDF out of this API/admin OpenSpec.
+
+#### Scenario: No batch work order creation
+
+- WHEN a production manager creates work orders in this MVP design
+- THEN the flow creates one work order from one selected order item
+- AND does not create multiple work orders in one batch operation
+
+#### Scenario: No batch dispatch
+
+- WHEN a user manages work orders from admin-web
+- THEN this change does not dispatch multiple order items or work orders together
+- AND batch dispatch requires a later OpenSpec
+
+#### Scenario: No production instruction print or PDF
+
+- WHEN a user views a work order
+- THEN this change does not design or implement print/PDF export
+- AND production instruction print/PDF remains future scope
 
 ## DoD
 
@@ -292,5 +375,11 @@ The system SHALL preserve customer-line and order-line ownership.
 - This change does not create or freeze route instances.
 - Work-order-driven dispatch is documented as a future change.
 - Production only reads `order_item` and does not mutate order core fields.
+- `project_order + N order_item` is documented as an order summary/candidate source, not the production work order model.
+- MVP work order creation remains one `order_item` to one `production_work_order`.
+- Candidate API read fields from `project_order/order_item` are documented.
+- `deal_amount`, `unit_price`, and `subtotal` are excluded from production work order MVP and default admin display.
+- Restricted `PUT /api/order-items/{id}` write-back is owned by dispatch/execution/progress changes, not this API/admin change.
+- Batch work order creation, batch dispatch, and production instruction print/PDF are excluded.
 - CRM, public pool, contribution, and order core logic are excluded.
 - No completion claim is allowed without verification evidence.

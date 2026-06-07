@@ -8,8 +8,10 @@ Steps:
 - Re-read `docs/codex-production-line.md`.
 - Re-read `docs/cursor-customer-line.md`.
 - Re-read `openspec/changes/production-work-order`.
+- Confirm customer-line `project_order` and `order_item` contract.
 - Confirm backend core already exists and this change only designs API/admin surfaces.
 - Confirm no Java, Controller, Mapper, Service, Entity, migration, Vue, TypeScript, route, package, backend core, dispatch, inventory, CRM, contribution, or order core changes are allowed.
+- Confirm batch work order creation, batch dispatch, and production instruction print/PDF are out of scope.
 
 DoD:
 
@@ -22,6 +24,7 @@ DoD:
 Steps:
 
 - Draft candidate order item API.
+- Include read-only `project_order` summary fields in candidate API where useful.
 - Draft create-from-order-item API.
 - Draft work order list API.
 - Draft work order detail API.
@@ -36,6 +39,7 @@ DoD:
 - `design.md` lists endpoint paths and purpose.
 - `spec.md` includes API requirements and scenarios.
 - Endpoints do not create route instances or mutate order core fields.
+- Endpoints do not call restricted `PUT /api/order-items/{id}` from create/edit/release/cancel flows.
 
 ## Task 3: Design request and response DTO shape
 
@@ -47,12 +51,15 @@ Steps:
 - Draft list row fields.
 - Draft detail response contents.
 - Include work order status and route link state.
+- Include allowed order summary fields such as order number, order type, customer type, and deal owner.
+- Exclude `deal_amount`, `unit_price`, and `subtotal`.
 
 DoD:
 
 - `design.md` includes request/response examples.
 - DTO drafts include production instruction, technical configuration, schedule, people, and material requirement fields.
 - DTO drafts do not include order amount, quotation, customer editing, inventory deduction, or finance fields.
+- DTO drafts treat `project_order + N order_item` as candidate context, not the production work order model.
 
 ## Task 4: Design admin work order list page
 
@@ -78,6 +85,7 @@ Steps:
 - Define entry from work order list.
 - Define order item candidate selector.
 - Define snapshot display after selection.
+- Define order summary display after selection when read-only fields are available.
 - Define production instruction form.
 - Define technical configuration form.
 - Define schedule and owner fields.
@@ -89,6 +97,8 @@ DoD:
 - `design.md` documents the full interaction flow.
 - Duplicate active work order error `WORK_ORDER_ALREADY_EXISTS_FOR_ORDER_ITEM` is documented.
 - The flow reads order item only and does not modify order core fields.
+- The flow creates one work order from one selected order item.
+- The flow does not implement batch creation or batch dispatch.
 
 ## Task 6: Design work order detail and edit drawer
 
@@ -150,12 +160,16 @@ Steps:
 - State this change does not refactor existing `production-dispatch-instance`.
 - Define route link display and optional link validation only.
 - State work-order-driven dispatch is a future change.
+- State restricted order-item production write-back belongs to dispatch/execution/progress changes.
+- State this change does not call `PUT /api/order-items/{id}`.
+- State batch dispatch is a future change.
 
 DoD:
 
 - Dispatch boundary appears in proposal, design, and spec.
 - Existing dispatch behavior remains unchanged by this OpenSpec.
 - Future implementation team can identify what not to implement in this change.
+- Work order API/admin create/edit/release/cancel cannot update `productionStatus`, `productionProgress`, or `productionRouteInstanceId`.
 
 ## Task 10: Design inventory and material-readiness boundary
 
@@ -178,10 +192,22 @@ DoD:
 
 Steps:
 
+- Document customer-line `project_order` fields.
+- Document customer-line `order_item` fields.
+- Document available or planned order APIs:
+  - `GET /api/order/list`
+  - `GET /api/order/{id}`
+  - `GET /api/order-items?orderId=xxx`
+  - `GET /api/order-items/{id}`
+  - restricted `PUT /api/order-items/{id}`
 - Define production candidate API as read-only.
-- Define fields production may display from order item.
+- Define fields production may read from `project_order/order_item`.
+- Clarify `project_order + N order_item` is an order summary/candidate source, not the production work order model.
+- Define MVP work order creation as one `order_item` to one `production_work_order`.
+- Define production work order snapshot guidance.
 - Exclude order creation.
 - Exclude order amount, quotation, customer, specification, quantity, and order core status mutation.
+- Exclude storing or default-display of `deal_amount`, `unit_price`, and `subtotal`.
 - Exclude CRM, public pool, and contribution.
 
 DoD:
@@ -189,8 +215,27 @@ DoD:
 - Order-line boundary appears in proposal, design, and spec.
 - Production work order remains a production-owned internal document.
 - Customer-line ownership remains clear.
+- Candidate read fields are explicitly listed.
+- Commercial amount fields stay out of production work order MVP and admin default display.
+- Restricted production write-back ownership is assigned to dispatch/execution/progress changes.
 
-## Task 12: Define future implementation test expectations
+## Task 12: Design batch and print/PDF boundary
+
+Steps:
+
+- State batch work order creation is not in this change.
+- State batch dispatch is not in this change.
+- State production instruction print is not in this change.
+- State production instruction PDF export is not in this change.
+- Define these as future OpenSpec candidates after single-item API/admin is stable.
+
+DoD:
+
+- Batch and print/PDF boundary appears in design and spec.
+- Overall acceptance criteria exclude batch dispatch and print/PDF.
+- The API/admin design remains focused on single `order_item` work order management.
+
+## Task 13: Define future implementation test expectations
 
 Steps:
 
@@ -198,6 +243,9 @@ Steps:
 - Draft service integration expectations for DRAFT edit and material edit.
 - Draft frontend/admin interaction tests.
 - Include negative tests for duplicate active work order, invalid material, forbidden edit, forbidden inventory effects, forbidden order mutation, and dispatch boundary.
+- Include tests that create/edit/release/cancel does not call restricted order-item write-back.
+- Include tests that commercial amount fields are not stored or shown by default.
+- Include tests that one selected order item creates one work order.
 
 DoD:
 
@@ -205,7 +253,7 @@ DoD:
 - `tasks.md` documents test expectations.
 - The plan requires verification evidence before implementation can be called complete.
 
-## Task 13: Define verification checklist
+## Task 14: Define verification checklist
 
 Steps:
 
@@ -219,6 +267,7 @@ Steps:
 - Confirm only the four OpenSpec md files appear for this change.
 - Confirm no `.java`, `.sql`, `.vue`, `.ts`, `pom.xml`, `package.json`, backend source, frontend source, or migration modifications appear.
 - Confirm no API or page completion claim is made.
+- Confirm only the four md files in `production-work-order-api-admin` changed.
 
 DoD:
 
@@ -242,8 +291,14 @@ DoD:
 - No package or Maven metadata is modified.
 - Existing production-work-order backend core is not modified.
 - Existing production-dispatch-instance is not refactored.
+- `project_order + N order_item` is documented as order summary/candidate source only.
+- MVP creation remains one `order_item` to one `production_work_order`.
+- Candidate API read fields from `project_order/order_item` are documented.
+- `deal_amount`, `unit_price`, and `subtotal` are excluded from production work order MVP and admin default display.
+- Restricted `PUT /api/order-items/{id}` is not used by work order create/edit/release/cancel.
 - Inventory deduction, reservation, stock in/out, inventory transaction, purchase, supplier, and finance are excluded.
 - CRM, public pool, contribution, order creation, and order core mutation are excluded.
+- Batch work order creation, batch dispatch, and production instruction print/PDF are excluded.
 - Nested/parallel process graph, photo upload, file upload, worker-uniapp, production-h5, and screen-web are excluded.
 - API/admin design covers list, detail, create from order item, update DRAFT, update materials, release, cancel, candidate order items, and route link display.
 - Verification evidence exists before this OpenSpec documentation is reported as prepared.
