@@ -58,3 +58,36 @@ export interface StepTemplatePayload {
   operationInstruction?: string;
   enabled?: boolean;
 }
+
+export interface StepMaterialRequirementTemplate {
+  id: number;
+  routeTemplateId: number;
+  stepTemplateId: number;
+  materialId: number | null;
+  materialCode: string | null;
+  materialName: string;
+  spec: string | null;
+  unit: string;
+  baseQtyPerUnit: number | string | null;
+  fixedQty: number | string | null;
+  lossRate: number | string | null;
+  requiredQtyExpression: string | null;
+  usageStage: string | null;
+  remark: string | null;
+  enabled: boolean;
+}
+
+export interface StepMaterialRequirementPayload {
+  materialId?: number | null;
+  materialCode?: string;
+  materialName: string;
+  spec?: string;
+  unit: string;
+  baseQtyPerUnit?: number | string | null;
+  fixedQty?: number | string | null;
+  lossRate?: number | string | null;
+  requiredQtyExpression?: string;
+  usageStage?: string;
+  remark?: string;
+  enabled?: boolean;
+}

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import AdminLayout from "@/layout/AdminLayout.vue";
+import InventoryPage from "@/modules/inventory/pages/InventoryPage.vue";
 import RouteTemplateEditPage from "@/modules/process/pages/RouteTemplateEditPage.vue";
 import RouteTemplateListPage from "@/modules/process/pages/RouteTemplateListPage.vue";
 import ProductionOrderItemConfigPage from "@/modules/production/pages/ProductionOrderItemConfigPage.vue";
@@ -18,6 +19,11 @@ export const router = createRouter({
         {
           path: "",
           redirect: "/process/route-templates",
+        },
+        {
+          path: "inventory",
+          name: "inventory",
+          component: InventoryPage,
         },
         {
           path: "process/route-templates",

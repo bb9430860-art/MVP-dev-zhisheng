@@ -1,15 +1,11 @@
 <template>
   <el-container class="admin-shell">
     <el-aside width="220px" class="admin-sidebar">
-      <div class="brand">至胜 MVP</div>
+      <div class="brand">智盛 MVP</div>
       <el-menu router :default-active="$route.path" class="side-menu">
         <el-menu-item index="/process/route-templates">
           <el-icon><Tickets /></el-icon>
           <span>工艺路线模板</span>
-        </el-menu-item>
-        <el-menu-item index="/production/order-items/1001/configure">
-          <el-icon><Operation /></el-icon>
-          <span>生产下发配置</span>
         </el-menu-item>
         <el-menu-item index="/production/work-orders">
           <el-icon><Document /></el-icon>
@@ -18,6 +14,10 @@
         <el-menu-item index="/production/tasks">
           <el-icon><List /></el-icon>
           <span>生产任务执行</span>
+        </el-menu-item>
+        <el-menu-item index="/inventory">
+          <el-icon><Box /></el-icon>
+          <span>库存管理</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { Document, List, Operation, Tickets } from "@element-plus/icons-vue";
+import { Box, Document, List, Tickets } from "@element-plus/icons-vue";
 </script>
 
 <style scoped>

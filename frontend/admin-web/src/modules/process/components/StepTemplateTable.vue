@@ -54,7 +54,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="estimatedHours" label="工时" width="90" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="360" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
             <el-button
@@ -70,6 +70,9 @@
               >下移</el-button
             >
             <el-button size="small" @click="$emit('edit', row)">编辑</el-button>
+            <el-button size="small" @click="$emit('edit-materials', row)"
+              >物料需求</el-button
+            >
             <el-button size="small" @click="$emit('toggle-enabled', row)">
               {{ row.enabled ? "停用" : "启用" }}
             </el-button>
@@ -99,6 +102,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   create: [];
   edit: [step: StepTemplate];
+  "edit-materials": [step: StepTemplate];
   "toggle-enabled": [step: StepTemplate];
   delete: [step: StepTemplate];
   "move-up": [step: StepTemplate];

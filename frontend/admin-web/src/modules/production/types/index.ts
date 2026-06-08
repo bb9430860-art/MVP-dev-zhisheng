@@ -168,8 +168,19 @@ export interface WorkOrderMaterialPayload {
   remark?: string | null;
 }
 
+export type MaterialReadinessStatus =
+  | "READY"
+  | "SHORTAGE"
+  | "UNLINKED_MATERIAL"
+  | "NO_STOCK_RECORD";
+
 export interface WorkOrderMaterial extends WorkOrderMaterialPayload {
   id: number;
+  availableQtySnapshot?: number | string | null;
+  shortageQty?: number | string | null;
+  readinessStatus?: MaterialReadinessStatus | null;
+  readinessCheckedAt?: string | null;
+  readinessMessage?: string | null;
   requirementStatus: string;
   updatedAt: string | null;
 }
@@ -236,4 +247,82 @@ export interface WorkOrder extends WorkOrderBasePayload {
   createdAt: string | null;
   updatedAt: string | null;
   materials: WorkOrderMaterial[];
+}
+
+export interface WorkOrderDispatchContext {
+  workOrder: WorkOrder;
+  orderItem: OrderItemProductionContext;
+  dispatched: boolean;
+}
+
+export interface WorkOrderMaterialGenerationItem {
+  materialId: number | null;
+  materialCode: string | null;
+  materialName: string;
+  spec: string | null;
+  unit: string | null;
+  requiredQty: number | string;
+  usageStage: string | null;
+  stepTemplateId: number | null;
+  stepName: string | null;
+  stepOrder: number | null;
+  relatedStepTemplateId: number | null;
+  relatedStepInstanceId: number | null;
+  quantityRuleSummary: string | null;
+  warning: string | null;
+  remark: string | null;
+}
+
+export interface WorkOrderMaterialGenerationResult {
+  generatedMaterials: WorkOrderMaterialGenerationItem[];
+  generatedCount: number;
+  replacedCount: number;
+  warnings: string[];
+}
+
+export interface WorkOrderMaterialReadinessItem {
+  materialId: number | null;
+  materialCode: string | null;
+  materialName: string;
+  spec: string | null;
+  unit: string | null;
+  requiredQty: number | string;
+  availableQty: number | string | null;
+  shortageQty: number | string | null;
+  readinessStatus: MaterialReadinessStatus;
+  readinessMessage: string | null;
+  usageStage: string | null;
+  relatedStepTemplateId: number | null;
+  relatedStepInstanceId: number | null;
+  quantityRuleSummary: string | null;
+  warning: string | null;
+  remark: string | null;
+}
+
+export interface WorkOrderMaterialReadinessStep {
+  stepTemplateId: number | null;
+  stepOrder: number | null;
+  stepName: string | null;
+  materials: WorkOrderMaterialReadinessItem[];
+}
+
+export interface WorkOrderMaterialReadinessSummary {
+  totalLines: number;
+  readyLines: number;
+  shortageLines: number;
+  unlinkedLines: number;
+  noStockRecordLines: number;
+}
+
+export interface WorkOrderMaterialReadinessResult {
+  quantitySnapshot: number | string | null;
+  itemsByStep: WorkOrderMaterialReadinessStep[];
+  summary: WorkOrderMaterialReadinessSummary;
+}
+
+export interface WorkOrderCreateWithReadinessPayload {
+  orderItemId: number;
+  routeTemplateId: number;
+  workOrderFields: WorkOrderBasePayload;
+  applyGeneratedMaterials: boolean;
 }

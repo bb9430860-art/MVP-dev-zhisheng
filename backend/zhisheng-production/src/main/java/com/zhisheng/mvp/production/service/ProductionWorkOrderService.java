@@ -3,6 +3,14 @@ package com.zhisheng.mvp.production.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhisheng.mvp.inventory.entity.InventoryStock;
+import com.zhisheng.mvp.inventory.mapper.InventoryStockMapper;
+import com.zhisheng.mvp.process.entity.ProcessRouteTemplate;
+import com.zhisheng.mvp.process.entity.ProcessStepMaterialRequirementTemplate;
+import com.zhisheng.mvp.process.entity.ProcessStepTemplate;
+import com.zhisheng.mvp.process.mapper.ProcessRouteTemplateMapper;
+import com.zhisheng.mvp.process.mapper.ProcessStepMaterialRequirementTemplateMapper;
+import com.zhisheng.mvp.process.mapper.ProcessStepTemplateMapper;
 import com.zhisheng.mvp.production.dto.PageResponse;
 import com.zhisheng.mvp.production.dto.ProductionWorkOrderCandidateQuery;
 import com.zhisheng.mvp.production.dto.ProductionWorkOrderCandidateResponse;
@@ -13,6 +21,15 @@ import com.zhisheng.mvp.production.dto.ProductionWorkOrderMaterialsUpdateRequest
 import com.zhisheng.mvp.production.dto.ProductionWorkOrderQuery;
 import com.zhisheng.mvp.production.dto.ProductionWorkOrderResponse;
 import com.zhisheng.mvp.production.dto.ProductionWorkOrderUpdateRequest;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialGenerationItemResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialGenerationRequest;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialGenerationResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessCreateRequest;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessItemResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessPreviewRequest;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessStepResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderMaterialReadinessSummaryResponse;
 import com.zhisheng.mvp.production.entity.ProductionRouteInstance;
 import com.zhisheng.mvp.production.entity.ProductionWorkOrder;
 import com.zhisheng.mvp.production.entity.ProductionWorkOrderMaterial;
@@ -26,8 +43,11 @@ import com.zhisheng.mvp.production.port.OrderItemCandidateQuery;
 import com.zhisheng.mvp.production.port.OrderItemCandidateReadPort;
 import com.zhisheng.mvp.production.port.OrderItemProductionContext;
 import com.zhisheng.mvp.production.port.OrderItemReadPort;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,10 +65,18 @@ public class ProductionWorkOrderService {
 
     private static final long DEFAULT_TENANT_ID = 1L;
     private static final int MAX_NO_RETRY = 3;
+    private static final String READINESS_READY = "READY";
+    private static final String READINESS_SHORTAGE = "SHORTAGE";
+    private static final String READINESS_UNLINKED_MATERIAL = "UNLINKED_MATERIAL";
+    private static final String READINESS_NO_STOCK_RECORD = "NO_STOCK_RECORD";
 
     private final ProductionWorkOrderMapper workOrderMapper;
     private final ProductionWorkOrderMaterialMapper materialMapper;
     private final ProductionRouteInstanceMapper routeInstanceMapper;
+    private final InventoryStockMapper inventoryStockMapper;
+    private final ProcessRouteTemplateMapper routeTemplateMapper;
+    private final ProcessStepTemplateMapper stepTemplateMapper;
+    private final ProcessStepMaterialRequirementTemplateMapper stepMaterialTemplateMapper;
     private final OrderItemReadPort orderItemReadPort;
     private final OrderItemCandidateReadPort orderItemCandidateReadPort;
     private final WorkOrderNoGenerator workOrderNoGenerator;
@@ -57,12 +85,20 @@ public class ProductionWorkOrderService {
             ProductionWorkOrderMapper workOrderMapper,
             ProductionWorkOrderMaterialMapper materialMapper,
             ProductionRouteInstanceMapper routeInstanceMapper,
+            InventoryStockMapper inventoryStockMapper,
+            ProcessRouteTemplateMapper routeTemplateMapper,
+            ProcessStepTemplateMapper stepTemplateMapper,
+            ProcessStepMaterialRequirementTemplateMapper stepMaterialTemplateMapper,
             OrderItemReadPort orderItemReadPort,
             OrderItemCandidateReadPort orderItemCandidateReadPort,
             WorkOrderNoGenerator workOrderNoGenerator) {
         this.workOrderMapper = workOrderMapper;
         this.materialMapper = materialMapper;
         this.routeInstanceMapper = routeInstanceMapper;
+        this.inventoryStockMapper = inventoryStockMapper;
+        this.routeTemplateMapper = routeTemplateMapper;
+        this.stepTemplateMapper = stepTemplateMapper;
+        this.stepMaterialTemplateMapper = stepMaterialTemplateMapper;
         this.orderItemReadPort = orderItemReadPort;
         this.orderItemCandidateReadPort = orderItemCandidateReadPort;
         this.workOrderNoGenerator = workOrderNoGenerator;
@@ -136,6 +172,90 @@ public class ProductionWorkOrderService {
 
     public ProductionWorkOrderResponse detail(Long workOrderId) {
         return toResponse(requiredWorkOrder(workOrderId), true);
+    }
+
+    public WorkOrderMaterialGenerationResponse previewMaterialGeneration(Long workOrderId, Long routeTemplateId) {
+        ProductionWorkOrder workOrder = requiredWorkOrder(workOrderId);
+        return generateMaterialResponse(workOrder, routeTemplateId, 0);
+    }
+
+    public WorkOrderMaterialReadinessResponse previewCreateMaterialReadiness(
+            WorkOrderMaterialReadinessPreviewRequest request) {
+        if (request == null || request.orderItemId() == null) {
+            throw new ProductionWorkOrderException("ORDER_ITEM_NOT_FOUND");
+        }
+        OrderItemProductionContext orderItem = orderItemReadPort.findById(request.orderItemId())
+                .orElseThrow(() -> new ProductionWorkOrderException("ORDER_ITEM_NOT_FOUND"));
+        return generateReadinessResponse(orderItem, request.routeTemplateId());
+    }
+
+    @Transactional
+    public ProductionWorkOrder createWithMaterialReadiness(
+            WorkOrderMaterialReadinessCreateRequest request,
+            Long operatorId) {
+        if (request == null || request.orderItemId() == null) {
+            throw new ProductionWorkOrderException("ORDER_ITEM_NOT_FOUND");
+        }
+        if (!Boolean.TRUE.equals(request.applyGeneratedMaterials())) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_GENERATION_EMPTY");
+        }
+        OrderItemProductionContext orderItem = orderItemReadPort.findById(request.orderItemId())
+                .orElseThrow(() -> new ProductionWorkOrderException("ORDER_ITEM_NOT_FOUND"));
+        ensureNoActiveWorkOrder(orderItem.id());
+        WorkOrderMaterialReadinessResponse readiness = generateReadinessResponse(orderItem, request.routeTemplateId());
+        ProductionWorkOrderCreateRequest createRequest = mergeCreateFields(request.orderItemId(), request.workOrderFields());
+
+        ProductionWorkOrder workOrder = null;
+        for (int attempt = 0; attempt < MAX_NO_RETRY; attempt++) {
+            workOrder = createWorkOrder(orderItem, createRequest, operatorId);
+            workOrder.setWorkOrderNo(workOrderNoGenerator.nextNo(DEFAULT_TENANT_ID));
+            try {
+                workOrderMapper.insert(workOrder);
+                break;
+            } catch (DuplicateKeyException exception) {
+                if (attempt == MAX_NO_RETRY - 1) {
+                    throw exception;
+                }
+            }
+        }
+        if (workOrder == null || workOrder.getId() == null) {
+            throw new ProductionWorkOrderException("WORK_ORDER_NO_GENERATION_FAILED");
+        }
+        insertReadinessMaterials(workOrder, flattenReadinessItems(readiness), operatorId);
+        return workOrderMapper.selectById(workOrder.getId());
+    }
+
+    @Transactional
+    public WorkOrderMaterialGenerationResponse generateMaterialsFromTemplate(
+            Long workOrderId,
+            WorkOrderMaterialGenerationRequest request,
+            Long operatorId) {
+        ProductionWorkOrder workOrder = requiredWorkOrder(workOrderId);
+        if (!ProductionWorkOrderStatus.DRAFT.name().equals(workOrder.getStatus())) {
+            throw new ProductionWorkOrderException("WORK_ORDER_NOT_DRAFT");
+        }
+        if (request == null || !Boolean.TRUE.equals(request.replaceExisting())) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_REPLACE_REJECTED");
+        }
+        WorkOrderMaterialGenerationResponse preview = generateMaterialResponse(workOrder, request.routeTemplateId(), 0);
+        int replacedCount = Math.toIntExact(materialMapper.selectCount(new LambdaQueryWrapper<ProductionWorkOrderMaterial>()
+                .eq(ProductionWorkOrderMaterial::getTenantId, DEFAULT_TENANT_ID)
+                .eq(ProductionWorkOrderMaterial::getWorkOrderId, workOrder.getId())
+                .eq(ProductionWorkOrderMaterial::getDeleted, false)));
+        materialMapper.delete(new LambdaQueryWrapper<ProductionWorkOrderMaterial>()
+                .eq(ProductionWorkOrderMaterial::getTenantId, DEFAULT_TENANT_ID)
+                .eq(ProductionWorkOrderMaterial::getWorkOrderId, workOrder.getId()));
+        insertGeneratedMaterials(workOrder, preview.generatedMaterials(), operatorId);
+        workOrderMapper.update(null, new LambdaUpdateWrapper<ProductionWorkOrder>()
+                .eq(ProductionWorkOrder::getId, workOrder.getId())
+                .eq(ProductionWorkOrder::getTenantId, DEFAULT_TENANT_ID)
+                .set(ProductionWorkOrder::getUpdatedAt, LocalDateTime.now())
+                .set(ProductionWorkOrder::getUpdatedBy, operatorId));
+        return new WorkOrderMaterialGenerationResponse(
+                preview.generatedMaterials(),
+                preview.generatedCount(),
+                replacedCount,
+                preview.warnings());
     }
 
     @Transactional
@@ -354,6 +474,391 @@ public class ProductionWorkOrderService {
             throw new ProductionWorkOrderException("WORK_ORDER_NOT_FOUND");
         }
         return workOrder;
+    }
+
+    private ProductionWorkOrderCreateRequest mergeCreateFields(
+            Long orderItemId,
+            ProductionWorkOrderCreateRequest fields) {
+        if (fields == null) {
+            return new ProductionWorkOrderCreateRequest(
+                    orderItemId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+        return new ProductionWorkOrderCreateRequest(
+                orderItemId,
+                fields.priority(),
+                fields.instructionTitle(),
+                fields.instructionRemark(),
+                fields.productionRequirement(),
+                fields.qualityRequirement(),
+                fields.packagingRequirement(),
+                fields.shippingRequirement(),
+                fields.deliveryRequirement(),
+                fields.plannedStartDate(),
+                fields.plannedFinishDate(),
+                fields.requiredDeliveryDate(),
+                fields.deadlineRemark(),
+                fields.equipmentModel(),
+                fields.technicalConfigSummary(),
+                fields.technicalConfigRemark(),
+                fields.technicalConfigJson(),
+                fields.responsibleUserId(),
+                fields.handlerUserId(),
+                fields.productionManagerId(),
+                fields.primaryWorkerId(),
+                fields.customerAcceptanceRequired(),
+                fields.acceptanceRemark(),
+                null);
+    }
+
+    private WorkOrderMaterialGenerationResponse generateMaterialResponse(
+            ProductionWorkOrder workOrder,
+            Long routeTemplateId,
+            int replacedCount) {
+        ProcessRouteTemplate routeTemplate = requiredEnabledRouteTemplate(routeTemplateId);
+        List<ProcessStepMaterialRequirementTemplate> templates = loadStepMaterialTemplates(routeTemplate.getId());
+        if (templates.isEmpty()) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_GENERATION_EMPTY");
+        }
+        Map<Long, ProcessStepTemplate> stepsById = loadStepsById(routeTemplate.getId());
+        List<String> warnings = new ArrayList<>();
+        List<WorkOrderMaterialGenerationItemResponse> generated = templates.stream()
+                .map(template -> toGeneratedMaterial(workOrder, template, stepsById.get(template.getStepTemplateId()), warnings))
+                .toList();
+        if (generated.isEmpty()) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_GENERATION_EMPTY");
+        }
+        return new WorkOrderMaterialGenerationResponse(generated, generated.size(), replacedCount, warnings);
+    }
+
+    private WorkOrderMaterialReadinessResponse generateReadinessResponse(
+            OrderItemProductionContext orderItem,
+            Long routeTemplateId) {
+        ProcessRouteTemplate routeTemplate = requiredEnabledRouteTemplate(routeTemplateId);
+        List<ProcessStepMaterialRequirementTemplate> templates = loadStepMaterialTemplates(routeTemplate.getId());
+        if (templates.isEmpty()) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_GENERATION_EMPTY");
+        }
+        Map<Long, ProcessStepTemplate> stepsById = loadStepsById(routeTemplate.getId());
+        Map<Long, InventoryStock> stockByMaterialId = loadStockByMaterialId(templates);
+        Map<Long, List<WorkOrderMaterialReadinessItemResponse>> materialsByStep = new LinkedHashMap<>();
+        int readyLines = 0;
+        int shortageLines = 0;
+        int unlinkedLines = 0;
+        int noStockRecordLines = 0;
+        for (ProcessStepMaterialRequirementTemplate template : templates) {
+            WorkOrderMaterialReadinessItemResponse item = toReadinessMaterial(
+                    orderItem.quantity(),
+                    template,
+                    stockByMaterialId.get(template.getMaterialId()));
+            materialsByStep.computeIfAbsent(template.getStepTemplateId(), ignored -> new ArrayList<>()).add(item);
+            switch (item.readinessStatus()) {
+                case READINESS_READY -> readyLines++;
+                case READINESS_SHORTAGE -> shortageLines++;
+                case READINESS_UNLINKED_MATERIAL -> unlinkedLines++;
+                case READINESS_NO_STOCK_RECORD -> noStockRecordLines++;
+                default -> throw new ProductionWorkOrderException("MATERIAL_READINESS_PREVIEW_FAILED");
+            }
+        }
+        if (materialsByStep.isEmpty()) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_GENERATION_EMPTY");
+        }
+        List<WorkOrderMaterialReadinessStepResponse> itemsByStep = materialsByStep.entrySet().stream()
+                .map(entry -> {
+                    ProcessStepTemplate step = stepsById.get(entry.getKey());
+                    return new WorkOrderMaterialReadinessStepResponse(
+                            entry.getKey(),
+                            step == null ? null : step.getStepOrder(),
+                            step == null ? null : step.getStepName(),
+                            entry.getValue());
+                })
+                .toList();
+        return new WorkOrderMaterialReadinessResponse(
+                orderItem.quantity(),
+                itemsByStep,
+                new WorkOrderMaterialReadinessSummaryResponse(
+                        readyLines + shortageLines + unlinkedLines + noStockRecordLines,
+                        readyLines,
+                        shortageLines,
+                        unlinkedLines,
+                        noStockRecordLines));
+    }
+
+    private List<ProcessStepMaterialRequirementTemplate> loadStepMaterialTemplates(Long routeTemplateId) {
+        return stepMaterialTemplateMapper.selectList(
+                new LambdaQueryWrapper<ProcessStepMaterialRequirementTemplate>()
+                        .eq(ProcessStepMaterialRequirementTemplate::getTenantId, DEFAULT_TENANT_ID)
+                        .eq(ProcessStepMaterialRequirementTemplate::getRouteTemplateId, routeTemplateId)
+                        .eq(ProcessStepMaterialRequirementTemplate::getEnabled, true)
+                        .eq(ProcessStepMaterialRequirementTemplate::getDeleted, false)
+                        .orderByAsc(ProcessStepMaterialRequirementTemplate::getStepTemplateId)
+                        .orderByAsc(ProcessStepMaterialRequirementTemplate::getId));
+    }
+
+    private Map<Long, InventoryStock> loadStockByMaterialId(List<ProcessStepMaterialRequirementTemplate> templates) {
+        List<Long> materialIds = templates.stream()
+                .map(ProcessStepMaterialRequirementTemplate::getMaterialId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (materialIds.isEmpty()) {
+            return Map.of();
+        }
+        return inventoryStockMapper.selectList(new LambdaQueryWrapper<InventoryStock>()
+                        .eq(InventoryStock::getTenantId, DEFAULT_TENANT_ID)
+                        .in(InventoryStock::getMaterialId, materialIds))
+                .stream()
+                .collect(Collectors.toMap(InventoryStock::getMaterialId, Function.identity(), (left, right) -> left));
+    }
+
+    private ProcessRouteTemplate requiredEnabledRouteTemplate(Long routeTemplateId) {
+        if (routeTemplateId == null) {
+            throw new ProductionWorkOrderException("PROCESS_ROUTE_TEMPLATE_NOT_FOUND");
+        }
+        ProcessRouteTemplate routeTemplate = routeTemplateMapper.selectById(routeTemplateId);
+        if (routeTemplate == null
+                || !Long.valueOf(DEFAULT_TENANT_ID).equals(routeTemplate.getTenantId())
+                || Boolean.TRUE.equals(routeTemplate.getDeleted())) {
+            throw new ProductionWorkOrderException("PROCESS_ROUTE_TEMPLATE_NOT_FOUND");
+        }
+        if (!Boolean.TRUE.equals(routeTemplate.getEnabled())) {
+            throw new ProductionWorkOrderException("PROCESS_ROUTE_TEMPLATE_DISABLED");
+        }
+        return routeTemplate;
+    }
+
+    private Map<Long, ProcessStepTemplate> loadStepsById(Long routeTemplateId) {
+        return stepTemplateMapper.selectList(new LambdaQueryWrapper<ProcessStepTemplate>()
+                        .eq(ProcessStepTemplate::getTenantId, DEFAULT_TENANT_ID)
+                        .eq(ProcessStepTemplate::getRouteTemplateId, routeTemplateId)
+                        .eq(ProcessStepTemplate::getDeleted, false))
+                .stream()
+                .collect(Collectors.toMap(ProcessStepTemplate::getId, Function.identity(), (left, right) -> left));
+    }
+
+    private WorkOrderMaterialGenerationItemResponse toGeneratedMaterial(
+            ProductionWorkOrder workOrder,
+            ProcessStepMaterialRequirementTemplate template,
+            ProcessStepTemplate step,
+            List<String> warnings) {
+        BigDecimal requiredQty = calculateRequiredQty(workOrder.getQuantitySnapshot(), template);
+        if (requiredQty.signum() <= 0) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_QUANTITY_INVALID");
+        }
+        String warning = null;
+        if (StringUtils.hasText(template.getRequiredQtyExpression())) {
+            warning = "required_qty_expression ignored in MVP: " + template.getRequiredQtyExpression().trim();
+            warnings.add(warning);
+        }
+        return new WorkOrderMaterialGenerationItemResponse(
+                template.getMaterialId(),
+                template.getMaterialCode(),
+                template.getMaterialName(),
+                template.getSpec(),
+                template.getUnit(),
+                requiredQty,
+                template.getUsageStage(),
+                template.getStepTemplateId(),
+                step == null ? null : step.getStepName(),
+                step == null ? null : step.getStepOrder(),
+                template.getStepTemplateId(),
+                null,
+                quantityRuleSummary(template),
+                warning,
+                template.getRemark());
+    }
+
+    private WorkOrderMaterialReadinessItemResponse toReadinessMaterial(
+            BigDecimal quantitySnapshot,
+            ProcessStepMaterialRequirementTemplate template,
+            InventoryStock stock) {
+        BigDecimal requiredQty = calculateRequiredQty(quantitySnapshot, template);
+        if (requiredQty.signum() <= 0) {
+            throw new ProductionWorkOrderException("WORK_ORDER_MATERIAL_QUANTITY_INVALID");
+        }
+        String warning = null;
+        if (StringUtils.hasText(template.getRequiredQtyExpression())) {
+            warning = "required_qty_expression ignored in MVP: " + template.getRequiredQtyExpression().trim();
+        }
+        BigDecimal availableQty = null;
+        BigDecimal shortageQty = null;
+        String readinessStatus;
+        String readinessMessage;
+        if (template.getMaterialId() == null) {
+            readinessStatus = READINESS_UNLINKED_MATERIAL;
+            readinessMessage = "未关联库存物料，无法核对";
+        } else if (stock == null) {
+            availableQty = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+            shortageQty = requiredQty;
+            readinessStatus = READINESS_NO_STOCK_RECORD;
+            readinessMessage = "无库存记录";
+        } else {
+            availableQty = defaultZero(stock.getAvailableQty()).setScale(4, RoundingMode.HALF_UP);
+            if (availableQty.compareTo(requiredQty) >= 0) {
+                shortageQty = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+                readinessStatus = READINESS_READY;
+                readinessMessage = "库存满足";
+            } else {
+                shortageQty = requiredQty.subtract(availableQty).setScale(4, RoundingMode.HALF_UP);
+                readinessStatus = READINESS_SHORTAGE;
+                readinessMessage = "库存不足";
+            }
+        }
+        return new WorkOrderMaterialReadinessItemResponse(
+                template.getMaterialId(),
+                template.getMaterialCode(),
+                template.getMaterialName(),
+                template.getSpec(),
+                template.getUnit(),
+                requiredQty,
+                availableQty,
+                shortageQty,
+                readinessStatus,
+                readinessMessage,
+                template.getUsageStage(),
+                template.getStepTemplateId(),
+                null,
+                quantityRuleSummary(template),
+                warning,
+                template.getRemark());
+    }
+
+    private BigDecimal calculateRequiredQty(
+            BigDecimal quantitySnapshot,
+            ProcessStepMaterialRequirementTemplate template) {
+        BigDecimal quantity = defaultZero(quantitySnapshot);
+        BigDecimal baseQty = defaultZero(template.getBaseQtyPerUnit()).multiply(quantity);
+        BigDecimal fixedQty = defaultZero(template.getFixedQty());
+        BigDecimal lossMultiplier = BigDecimal.ONE.add(defaultZero(template.getLossRate()));
+        return baseQty.add(fixedQty).multiply(lossMultiplier).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal defaultZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String quantityRuleSummary(ProcessStepMaterialRequirementTemplate template) {
+        return "baseQtyPerUnit="
+                + defaultZero(template.getBaseQtyPerUnit()).toPlainString()
+                + ", fixedQty="
+                + defaultZero(template.getFixedQty()).toPlainString()
+                + ", lossRate="
+                + defaultZero(template.getLossRate()).toPlainString();
+    }
+
+    private void insertGeneratedMaterials(
+            ProductionWorkOrder workOrder,
+            List<WorkOrderMaterialGenerationItemResponse> materials,
+            Long operatorId) {
+        for (WorkOrderMaterialGenerationItemResponse item : materials) {
+            ProductionWorkOrderMaterial material = createGeneratedMaterial(workOrder, item, operatorId);
+            materialMapper.insert(material);
+        }
+    }
+
+    private List<WorkOrderMaterialReadinessItemResponse> flattenReadinessItems(
+            WorkOrderMaterialReadinessResponse readiness) {
+        return readiness.itemsByStep().stream()
+                .flatMap(step -> step.materials().stream())
+                .toList();
+    }
+
+    private void insertReadinessMaterials(
+            ProductionWorkOrder workOrder,
+            List<WorkOrderMaterialReadinessItemResponse> materials,
+            Long operatorId) {
+        LocalDateTime checkedAt = LocalDateTime.now();
+        for (WorkOrderMaterialReadinessItemResponse item : materials) {
+            materialMapper.insert(createReadinessMaterial(workOrder, item, operatorId, checkedAt));
+        }
+    }
+
+    private ProductionWorkOrderMaterial createGeneratedMaterial(
+            ProductionWorkOrder workOrder,
+            WorkOrderMaterialGenerationItemResponse item,
+            Long operatorId) {
+        LocalDateTime now = LocalDateTime.now();
+        ProductionWorkOrderMaterial material = new ProductionWorkOrderMaterial();
+        material.setTenantId(workOrder.getTenantId());
+        material.setWorkOrderId(workOrder.getId());
+        material.setOrderId(workOrder.getOrderId());
+        material.setOrderItemId(workOrder.getOrderItemId());
+        material.setMaterialId(item.materialId());
+        material.setMaterialCode(item.materialCode());
+        material.setMaterialName(item.materialName());
+        material.setSpec(item.spec());
+        material.setUnit(item.unit());
+        material.setRequiredQty(item.requiredQty());
+        material.setUsageStage(item.usageStage());
+        material.setRelatedStepTemplateId(item.relatedStepTemplateId());
+        material.setRelatedStepInstanceId(null);
+        material.setRequirementStatus(ProductionWorkOrderStatus.DRAFT.name());
+        material.setRemark(item.remark());
+        material.setCreatedBy(operatorId);
+        material.setCreatedAt(now);
+        material.setUpdatedBy(operatorId);
+        material.setUpdatedAt(now);
+        material.setDeleted(false);
+        material.setDeleteMarker(0L);
+        return material;
+    }
+
+    private ProductionWorkOrderMaterial createReadinessMaterial(
+            ProductionWorkOrder workOrder,
+            WorkOrderMaterialReadinessItemResponse item,
+            Long operatorId,
+            LocalDateTime checkedAt) {
+        LocalDateTime now = LocalDateTime.now();
+        ProductionWorkOrderMaterial material = new ProductionWorkOrderMaterial();
+        material.setTenantId(workOrder.getTenantId());
+        material.setWorkOrderId(workOrder.getId());
+        material.setOrderId(workOrder.getOrderId());
+        material.setOrderItemId(workOrder.getOrderItemId());
+        material.setMaterialId(item.materialId());
+        material.setMaterialCode(item.materialCode());
+        material.setMaterialName(item.materialName());
+        material.setSpec(item.spec());
+        material.setUnit(item.unit());
+        material.setRequiredQty(item.requiredQty());
+        material.setAvailableQtySnapshot(item.availableQty());
+        material.setShortageQty(item.shortageQty());
+        material.setReadinessStatus(item.readinessStatus());
+        material.setReadinessCheckedAt(checkedAt);
+        material.setReadinessMessage(item.readinessMessage());
+        material.setUsageStage(item.usageStage());
+        material.setRelatedStepTemplateId(item.relatedStepTemplateId());
+        material.setRelatedStepInstanceId(null);
+        material.setRequirementStatus(ProductionWorkOrderStatus.DRAFT.name());
+        material.setRemark(item.remark());
+        material.setCreatedBy(operatorId);
+        material.setCreatedAt(now);
+        material.setUpdatedBy(operatorId);
+        material.setUpdatedAt(now);
+        material.setDeleted(false);
+        material.setDeleteMarker(0L);
+        return material;
     }
 
     private LambdaQueryWrapper<ProductionWorkOrder> baseWorkOrderQuery() {
@@ -593,10 +1098,15 @@ public class ProductionWorkOrderService {
                 material.getMaterialId(),
                 material.getMaterialCode(),
                 material.getMaterialName(),
-                material.getSpec(),
-                material.getUnit(),
-                material.getRequiredQty(),
-                material.getUsageStage(),
+              material.getSpec(),
+              material.getUnit(),
+              material.getRequiredQty(),
+              material.getAvailableQtySnapshot(),
+              material.getShortageQty(),
+              material.getReadinessStatus(),
+              material.getReadinessCheckedAt(),
+              material.getReadinessMessage(),
+              material.getUsageStage(),
                 material.getRelatedStepTemplateId(),
                 material.getRelatedStepInstanceId(),
                 material.getRequirementStatus(),

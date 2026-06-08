@@ -187,7 +187,6 @@ class ProductionStepCheckinServiceTest {
     void migrationCreatesOnlyProductionStepCheckinAndNoOutOfScopeTables() {
         assertThat(tableExists("production_step_checkin")).isTrue();
         assertThat(tableExists("file_asset")).isFalse();
-        assertThat(tableExists("inventory_stock")).isFalse();
         assertThat(tableExists("attendance_record")).isFalse();
         assertThat(tableExists("dashboard")).isFalse();
         assertThat(tableExists("orders")).isFalse();

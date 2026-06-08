@@ -231,6 +231,7 @@ class ProductionWorkOrderServiceTest {
                 "GENERAL",
                 new BigDecimal("3.00"));
         orderItemAdapter.putDemoOrderItem(original);
+        long inventoryTransactionCountBefore = countRows("inventory_transaction");
 
         workOrderService.createFromOrderItem(createRequest(1008L), 201L);
 
@@ -243,7 +244,7 @@ class ProductionWorkOrderServiceTest {
         assertThat(after.productionStatus()).isEqualTo(original.productionStatus());
         assertThat(after.productionProgress()).isEqualByComparingTo(original.productionProgress());
         assertThat(after.productionRouteInstanceId()).isEqualTo(original.productionRouteInstanceId());
-        assertThat(tableExists("inventory_transaction")).isFalse();
+        assertThat(countRows("inventory_transaction")).isEqualTo(inventoryTransactionCountBefore);
     }
 
     @Test
@@ -373,5 +374,10 @@ class ProductionWorkOrderServiceTest {
                 Integer.class,
                 tableName);
         return count != null && count > 0;
+    }
+
+    private long countRows(String tableName) {
+        Long count = jdbcTemplate.queryForObject("select count(*) from " + tableName, Long.class);
+        return count == null ? 0L : count;
     }
 }

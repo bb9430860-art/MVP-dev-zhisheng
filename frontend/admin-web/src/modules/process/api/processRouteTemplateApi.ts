@@ -3,6 +3,8 @@ import type {
   RouteTemplate,
   RouteTemplateOption,
   RouteTemplatePayload,
+  StepMaterialRequirementPayload,
+  StepMaterialRequirementTemplate,
   StepTemplate,
   StepTemplatePayload,
 } from "../types";
@@ -137,5 +139,37 @@ export function reorderSteps(
     httpClient.put(`${routeTemplateBase}/${routeTemplateId}/steps/reorder`, {
       stepIds,
     }),
+  );
+}
+
+export function listStepMaterialRequirements(
+  routeTemplateId: number,
+): Promise<StepMaterialRequirementTemplate[]> {
+  return requestData(
+    httpClient.get(`${routeTemplateBase}/${routeTemplateId}/step-materials`),
+  );
+}
+
+export function listStepMaterialRequirementsByStep(
+  routeTemplateId: number,
+  stepTemplateId: number,
+): Promise<StepMaterialRequirementTemplate[]> {
+  return requestData(
+    httpClient.get(
+      `${routeTemplateBase}/${routeTemplateId}/steps/${stepTemplateId}/materials`,
+    ),
+  );
+}
+
+export function replaceStepMaterialRequirements(
+  routeTemplateId: number,
+  stepTemplateId: number,
+  materials: StepMaterialRequirementPayload[],
+): Promise<StepMaterialRequirementTemplate[]> {
+  return requestData(
+    httpClient.put(
+      `${routeTemplateBase}/${routeTemplateId}/steps/${stepTemplateId}/materials`,
+      { materials },
+    ),
   );
 }

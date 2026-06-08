@@ -14,11 +14,15 @@ import com.zhisheng.mvp.production.dto.OrderItemConfigContextResponse;
 import com.zhisheng.mvp.production.dto.OrderItemProductionResponse;
 import com.zhisheng.mvp.production.dto.ProductionDispatchResponse;
 import com.zhisheng.mvp.production.dto.ProductionSummaryResponse;
+import com.zhisheng.mvp.production.dto.WorkOrderDispatchContextResponse;
 import com.zhisheng.mvp.production.entity.ProductionRouteInstance;
 import com.zhisheng.mvp.production.entity.ProductionStepInstance;
+import com.zhisheng.mvp.production.entity.ProductionWorkOrder;
+import com.zhisheng.mvp.production.enums.ProductionWorkOrderStatus;
 import com.zhisheng.mvp.production.exception.ProductionDispatchException;
 import com.zhisheng.mvp.production.mapper.ProductionRouteInstanceMapper;
 import com.zhisheng.mvp.production.mapper.ProductionStepInstanceMapper;
+import com.zhisheng.mvp.production.mapper.ProductionWorkOrderMapper;
 import com.zhisheng.mvp.production.port.OrderItemProductionContext;
 import com.zhisheng.mvp.production.port.OrderItemProductionPort;
 import com.zhisheng.mvp.production.port.OrderItemReadPort;
@@ -49,6 +53,8 @@ public class ProductionDispatchService {
     private final ProcessStepTemplateMapper stepTemplateMapper;
     private final ProductionRouteInstanceMapper routeInstanceMapper;
     private final ProductionStepInstanceMapper stepInstanceMapper;
+    private final ProductionWorkOrderMapper workOrderMapper;
+    private final ProductionWorkOrderService workOrderService;
 
     public ProductionDispatchService(
             OrderItemReadPort orderItemReadPort,
@@ -56,13 +62,17 @@ public class ProductionDispatchService {
             ProcessRouteTemplateMapper routeTemplateMapper,
             ProcessStepTemplateMapper stepTemplateMapper,
             ProductionRouteInstanceMapper routeInstanceMapper,
-            ProductionStepInstanceMapper stepInstanceMapper) {
+            ProductionStepInstanceMapper stepInstanceMapper,
+            ProductionWorkOrderMapper workOrderMapper,
+            ProductionWorkOrderService workOrderService) {
         this.orderItemReadPort = orderItemReadPort;
         this.orderItemProductionPort = orderItemProductionPort;
         this.routeTemplateMapper = routeTemplateMapper;
         this.stepTemplateMapper = stepTemplateMapper;
         this.routeInstanceMapper = routeInstanceMapper;
         this.stepInstanceMapper = stepInstanceMapper;
+        this.workOrderMapper = workOrderMapper;
+        this.workOrderService = workOrderService;
     }
 
     @Transactional(readOnly = true)
@@ -79,6 +89,42 @@ public class ProductionDispatchService {
             DispatchConfigFromTemplateRequest request) {
         OrderItemProductionContext orderItem = requiredOrderItem(orderItemId);
         ensureNotDispatched(orderItem);
+        if (request == null || request.routeTemplateId() == null) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
+        }
+        ProcessRouteTemplate routeTemplate = availableRouteTemplate(request.routeTemplateId());
+        List<ProcessStepTemplate> steps = activeTemplateSteps(routeTemplate.getId());
+        if (steps.isEmpty()) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_HAS_NO_ENABLED_STEPS");
+        }
+
+        return new DispatchConfigResponse(
+                routeTemplate.getId(),
+                routeTemplate.getRouteCode(),
+                routeTemplate.getRouteName(),
+                routeTemplate.getProductType(),
+                routeTemplate.getDescription(),
+                steps.stream()
+                        .map(this::toDispatchConfigStep)
+                        .toList());
+    }
+
+    @Transactional(readOnly = true)
+    public WorkOrderDispatchContextResponse workOrderDispatchContext(Long workOrderId) {
+        ProductionWorkOrder workOrder = requiredWorkOrder(workOrderId);
+        OrderItemProductionContext orderItem = requiredOrderItem(workOrder.getOrderItemId());
+        ensureWorkOrderMatchesOrderItem(workOrder, orderItem);
+        return new WorkOrderDispatchContextResponse(
+                workOrderService.detail(workOrderId),
+                OrderItemProductionResponse.from(orderItem),
+                workOrder.getProductionRouteInstanceId() != null || isDispatched(orderItem));
+    }
+
+    @Transactional(readOnly = true)
+    public DispatchConfigResponse createWorkOrderConfigFromTemplate(
+            Long workOrderId,
+            DispatchConfigFromTemplateRequest request) {
+        requiredDispatchableWorkOrder(workOrderId);
         if (request == null || request.routeTemplateId() == null) {
             throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
         }
@@ -189,12 +235,126 @@ public class ProductionDispatchService {
                 steps.size());
     }
 
+    @Transactional
+    public ProductionDispatchResponse dispatchWorkOrder(
+            Long workOrderId,
+            DispatchProductionRequest request,
+            Long operatorId) {
+        if (request == null || request.routeTemplateId() == null) {
+            throw new ProductionDispatchException("ROUTE_TEMPLATE_NOT_AVAILABLE");
+        }
+        if (request.steps() == null || request.steps().isEmpty()) {
+            throw new ProductionDispatchException("DISPATCH_STEPS_REQUIRED");
+        }
+
+        ProductionWorkOrder workOrder = requiredDispatchableWorkOrder(workOrderId);
+        OrderItemProductionContext orderItem = requiredOrderItem(workOrder.getOrderItemId());
+        ensureWorkOrderMatchesOrderItem(workOrder, orderItem);
+        ensureOrderItemRouteNotLinkedToAnotherInstance(workOrder, orderItem);
+
+        ProcessRouteTemplate routeTemplate = availableRouteTemplate(request.routeTemplateId());
+        ensureTemplateHasEnabledSteps(routeTemplate.getId());
+        List<DispatchStepRequest> steps = validateAndNormalizeSteps(routeTemplate.getId(), request.steps());
+
+        ProductionRouteInstance routeInstance = createRouteInstance(orderItem, routeTemplate, request, operatorId);
+        try {
+            routeInstanceMapper.insert(routeInstance);
+        } catch (DuplicateKeyException exception) {
+            throw new ProductionDispatchException("WORK_ORDER_ALREADY_DISPATCHED");
+        }
+
+        for (DispatchStepRequest step : steps) {
+            stepInstanceMapper.insert(createStepInstance(orderItem, routeInstance.getId(), step, operatorId));
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = workOrderMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ProductionWorkOrder>()
+                .eq(ProductionWorkOrder::getId, workOrder.getId())
+                .eq(ProductionWorkOrder::getTenantId, DEFAULT_TENANT_ID)
+                .eq(ProductionWorkOrder::getStatus, ProductionWorkOrderStatus.RELEASED.name())
+                .isNull(ProductionWorkOrder::getProductionRouteInstanceId)
+                .eq(ProductionWorkOrder::getDeleted, false)
+                .set(ProductionWorkOrder::getProductionRouteInstanceId, routeInstance.getId())
+                .set(ProductionWorkOrder::getStatus, ProductionWorkOrderStatus.IN_PROGRESS.name())
+                .set(ProductionWorkOrder::getUpdatedAt, now)
+                .set(ProductionWorkOrder::getUpdatedBy, operatorId));
+        if (updated != 1) {
+            throw new ProductionDispatchException("WORK_ORDER_ALREADY_DISPATCHED");
+        }
+
+        orderItemProductionPort.markDispatched(
+                orderItem.id(),
+                STATUS_DISPATCHED,
+                BigDecimal.ZERO,
+                routeInstance.getId());
+
+        return new ProductionDispatchResponse(
+                routeInstance.getId(),
+                orderItem.id(),
+                STATUS_DISPATCHED,
+                true,
+                steps.size());
+    }
+
     private OrderItemProductionContext requiredOrderItem(Long orderItemId) {
         if (orderItemId == null) {
             throw new ProductionDispatchException("ORDER_ITEM_NOT_FOUND");
         }
         return orderItemReadPort.findById(orderItemId)
                 .orElseThrow(() -> new ProductionDispatchException("ORDER_ITEM_NOT_FOUND"));
+    }
+
+    private ProductionWorkOrder requiredWorkOrder(Long workOrderId) {
+        if (workOrderId == null) {
+            throw new ProductionDispatchException("WORK_ORDER_NOT_FOUND");
+        }
+        ProductionWorkOrder workOrder = workOrderMapper.selectById(workOrderId);
+        if (workOrder == null
+                || !Long.valueOf(DEFAULT_TENANT_ID).equals(workOrder.getTenantId())
+                || Boolean.TRUE.equals(workOrder.getDeleted())) {
+            throw new ProductionDispatchException("WORK_ORDER_NOT_FOUND");
+        }
+        return workOrder;
+    }
+
+    private ProductionWorkOrder requiredDispatchableWorkOrder(Long workOrderId) {
+        ProductionWorkOrder workOrder = requiredWorkOrder(workOrderId);
+        if (workOrder.getProductionRouteInstanceId() != null) {
+            throw new ProductionDispatchException("WORK_ORDER_ALREADY_DISPATCHED");
+        }
+        if (ProductionWorkOrderStatus.CANCELLED.name().equals(workOrder.getStatus())) {
+            throw new ProductionDispatchException("WORK_ORDER_CANCELLED");
+        }
+        if (ProductionWorkOrderStatus.COMPLETED.name().equals(workOrder.getStatus())) {
+            throw new ProductionDispatchException("WORK_ORDER_COMPLETED");
+        }
+        if (ProductionWorkOrderStatus.IN_PROGRESS.name().equals(workOrder.getStatus())) {
+            throw new ProductionDispatchException("WORK_ORDER_ALREADY_DISPATCHED");
+        }
+        if (!ProductionWorkOrderStatus.RELEASED.name().equals(workOrder.getStatus())) {
+            throw new ProductionDispatchException("WORK_ORDER_NOT_RELEASED");
+        }
+        return workOrder;
+    }
+
+    private void ensureWorkOrderMatchesOrderItem(
+            ProductionWorkOrder workOrder,
+            OrderItemProductionContext orderItem) {
+        if (!workOrder.getOrderItemId().equals(orderItem.id())
+                || !workOrder.getOrderId().equals(orderItem.orderId())) {
+            throw new ProductionDispatchException("WORK_ORDER_ROUTE_LINK_CONFLICT");
+        }
+    }
+
+    private void ensureOrderItemRouteNotLinkedToAnotherInstance(
+            ProductionWorkOrder workOrder,
+            OrderItemProductionContext orderItem) {
+        if (orderItem.productionRouteInstanceId() == null) {
+            return;
+        }
+        if (!orderItem.productionRouteInstanceId().equals(workOrder.getProductionRouteInstanceId())) {
+            throw new ProductionDispatchException("WORK_ORDER_ROUTE_LINK_CONFLICT");
+        }
     }
 
     private ProcessRouteTemplate availableRouteTemplate(Long routeTemplateId) {
@@ -305,6 +465,14 @@ public class ProductionDispatchService {
             OrderItemProductionContext orderItem,
             ProcessRouteTemplate routeTemplate,
             DispatchProductionRequest request) {
+        return createRouteInstance(orderItem, routeTemplate, request, null);
+    }
+
+    private ProductionRouteInstance createRouteInstance(
+            OrderItemProductionContext orderItem,
+            ProcessRouteTemplate routeTemplate,
+            DispatchProductionRequest request,
+            Long operatorId) {
         LocalDateTime now = LocalDateTime.now();
         ProductionRouteInstance routeInstance = new ProductionRouteInstance();
         routeInstance.setTenantId(DEFAULT_TENANT_ID);
@@ -321,9 +489,12 @@ public class ProductionDispatchService {
         routeInstance.setStatus(STATUS_DISPATCHED);
         routeInstance.setProductionProgress(BigDecimal.ZERO);
         routeInstance.setFrozen(true);
+        routeInstance.setDispatchedBy(operatorId);
         routeInstance.setDispatchedAt(now);
         routeInstance.setIdempotencyKey(request.idempotencyKey());
+        routeInstance.setCreatedBy(operatorId);
         routeInstance.setCreatedAt(now);
+        routeInstance.setUpdatedBy(operatorId);
         routeInstance.setUpdatedAt(now);
         routeInstance.setDeleted(false);
         routeInstance.setDeleteMarker(0L);
@@ -334,6 +505,14 @@ public class ProductionDispatchService {
             OrderItemProductionContext orderItem,
             Long routeInstanceId,
             DispatchStepRequest step) {
+        return createStepInstance(orderItem, routeInstanceId, step, null);
+    }
+
+    private ProductionStepInstance createStepInstance(
+            OrderItemProductionContext orderItem,
+            Long routeInstanceId,
+            DispatchStepRequest step,
+            Long operatorId) {
         LocalDateTime now = LocalDateTime.now();
         ProductionStepInstance stepInstance = new ProductionStepInstance();
         stepInstance.setTenantId(DEFAULT_TENANT_ID);
@@ -353,7 +532,9 @@ public class ProductionDispatchService {
         stepInstance.setOperationInstruction(step.operationInstruction());
         stepInstance.setStatus(STEP_STATUS_PENDING);
         stepInstance.setFrozen(true);
+        stepInstance.setCreatedBy(operatorId);
         stepInstance.setCreatedAt(now);
+        stepInstance.setUpdatedBy(operatorId);
         stepInstance.setUpdatedAt(now);
         stepInstance.setDeleted(false);
         stepInstance.setDeleteMarker(0L);

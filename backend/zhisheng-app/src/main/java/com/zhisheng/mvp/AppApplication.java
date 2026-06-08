@@ -7,7 +7,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 @MapperScan({
         "com.zhisheng.mvp.process.mapper",
-        "com.zhisheng.mvp.production.mapper"
+        "com.zhisheng.mvp.production.mapper",
+        "com.zhisheng.mvp.inventory.mapper"
 })
 public class AppApplication {
 

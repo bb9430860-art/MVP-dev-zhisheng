@@ -1,11 +1,18 @@
 import { httpClient, requestData } from "@/api/httpClient";
 import type {
+  DispatchConfig,
+  DispatchPayload,
   PageResponse,
+  ProductionDispatchResult,
   WorkOrder,
   WorkOrderBasePayload,
   WorkOrderCandidate,
+  WorkOrderCreateWithReadinessPayload,
   WorkOrderCreatePayload,
+  WorkOrderDispatchContext,
+  WorkOrderMaterialGenerationResult,
   WorkOrderMaterialPayload,
+  WorkOrderMaterialReadinessResult,
 } from "../types";
 
 const workOrderBase = "/api/production/work-orders";
@@ -50,6 +57,26 @@ export function createWorkOrderFromOrderItem(
   return requestData(httpClient.post(`${workOrderBase}/from-order-item`, payload));
 }
 
+export function previewCreateWorkOrderMaterialReadiness(
+  orderItemId: number,
+  routeTemplateId: number,
+): Promise<WorkOrderMaterialReadinessResult> {
+  return requestData(
+    httpClient.post(`${workOrderBase}/material-readiness/preview-create`, {
+      orderItemId,
+      routeTemplateId,
+    }),
+  );
+}
+
+export function createWorkOrderWithMaterialReadiness(
+  payload: WorkOrderCreateWithReadinessPayload,
+): Promise<WorkOrder> {
+  return requestData(
+    httpClient.post(`${workOrderBase}/create-with-material-readiness`, payload),
+  );
+}
+
 export function listWorkOrders(
   params: WorkOrderQuery,
 ): Promise<PageResponse<WorkOrder>> {
@@ -82,4 +109,53 @@ export function releaseWorkOrder(workOrderId: number): Promise<WorkOrder> {
 
 export function cancelWorkOrder(workOrderId: number): Promise<WorkOrder> {
   return requestData(httpClient.post(`${workOrderBase}/${workOrderId}/cancel`));
+}
+
+export function getWorkOrderDispatchContext(
+  workOrderId: number,
+): Promise<WorkOrderDispatchContext> {
+  return requestData(
+    httpClient.get(`${workOrderBase}/${workOrderId}/dispatch-context`),
+  );
+}
+
+export function createWorkOrderDispatchConfigFromTemplate(
+  workOrderId: number,
+  routeTemplateId: number,
+): Promise<DispatchConfig> {
+  return requestData(
+    httpClient.post(`${workOrderBase}/${workOrderId}/dispatch-config/from-template`, {
+      routeTemplateId,
+    }),
+  );
+}
+
+export function dispatchWorkOrder(
+  workOrderId: number,
+  payload: DispatchPayload,
+): Promise<ProductionDispatchResult> {
+  return requestData(httpClient.post(`${workOrderBase}/${workOrderId}/dispatch`, payload));
+}
+
+export function previewWorkOrderMaterialGeneration(
+  workOrderId: number,
+  routeTemplateId: number,
+): Promise<WorkOrderMaterialGenerationResult> {
+  return requestData(
+    httpClient.get(`${workOrderBase}/${workOrderId}/material-generation/preview`, {
+      params: { routeTemplateId },
+    }),
+  );
+}
+
+export function generateWorkOrderMaterialsFromTemplate(
+  workOrderId: number,
+  routeTemplateId: number,
+): Promise<WorkOrderMaterialGenerationResult> {
+  return requestData(
+    httpClient.post(`${workOrderBase}/${workOrderId}/materials/generate-from-template`, {
+      routeTemplateId,
+      replaceExisting: true,
+    }),
+  );
 }

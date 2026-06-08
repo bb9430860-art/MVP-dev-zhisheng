@@ -21,6 +21,11 @@ public class ProductionWorkOrderMaterial {
     private String spec;
     private String unit;
     private BigDecimal requiredQty;
+    private BigDecimal availableQtySnapshot;
+    private BigDecimal shortageQty;
+    private String readinessStatus;
+    private LocalDateTime readinessCheckedAt;
+    private String readinessMessage;
     private String usageStage;
     private Long relatedStepTemplateId;
     private Long relatedStepInstanceId;
@@ -119,6 +124,46 @@ public class ProductionWorkOrderMaterial {
 
     public void setRequiredQty(BigDecimal requiredQty) {
         this.requiredQty = requiredQty;
+    }
+
+    public BigDecimal getAvailableQtySnapshot() {
+        return availableQtySnapshot;
+    }
+
+    public void setAvailableQtySnapshot(BigDecimal availableQtySnapshot) {
+        this.availableQtySnapshot = availableQtySnapshot;
+    }
+
+    public BigDecimal getShortageQty() {
+        return shortageQty;
+    }
+
+    public void setShortageQty(BigDecimal shortageQty) {
+        this.shortageQty = shortageQty;
+    }
+
+    public String getReadinessStatus() {
+        return readinessStatus;
+    }
+
+    public void setReadinessStatus(String readinessStatus) {
+        this.readinessStatus = readinessStatus;
+    }
+
+    public LocalDateTime getReadinessCheckedAt() {
+        return readinessCheckedAt;
+    }
+
+    public void setReadinessCheckedAt(LocalDateTime readinessCheckedAt) {
+        this.readinessCheckedAt = readinessCheckedAt;
+    }
+
+    public String getReadinessMessage() {
+        return readinessMessage;
+    }
+
+    public void setReadinessMessage(String readinessMessage) {
+        this.readinessMessage = readinessMessage;
     }
 
     public String getUsageStage() {

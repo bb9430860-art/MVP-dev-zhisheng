@@ -1,0 +1,62 @@
+CREATE TABLE material_item (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    material_code VARCHAR(100) NOT NULL,
+    material_name VARCHAR(200) NOT NULL,
+    spec VARCHAR(500) NULL,
+    unit VARCHAR(50) NOT NULL,
+    category VARCHAR(100) NULL,
+    enabled TINYINT NOT NULL DEFAULT 1,
+    remark VARCHAR(500) NULL,
+    created_by BIGINT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by BIGINT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0,
+    delete_marker VARCHAR(64) NOT NULL DEFAULT '',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_material_item_code (tenant_id, material_code, delete_marker),
+    KEY idx_material_item_enabled (tenant_id, enabled, deleted),
+    KEY idx_material_item_name (tenant_id, material_name, deleted)
+);
+
+CREATE TABLE inventory_stock (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    material_id BIGINT NOT NULL,
+    material_code_snapshot VARCHAR(100) NOT NULL,
+    material_name_snapshot VARCHAR(200) NOT NULL,
+    spec_snapshot VARCHAR(500) NULL,
+    unit_snapshot VARCHAR(50) NOT NULL,
+    on_hand_qty DECIMAL(18, 4) NOT NULL DEFAULT 0,
+    reserved_qty DECIMAL(18, 4) NOT NULL DEFAULT 0,
+    available_qty DECIMAL(18, 4) NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_inventory_stock_material (tenant_id, material_id),
+    KEY idx_inventory_stock_material_name (tenant_id, material_name_snapshot)
+);
+
+CREATE TABLE inventory_transaction (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    material_id BIGINT NOT NULL,
+    transaction_type VARCHAR(50) NOT NULL,
+    qty DECIMAL(18, 4) NOT NULL,
+    before_on_hand_qty DECIMAL(18, 4) NOT NULL,
+    after_on_hand_qty DECIMAL(18, 4) NOT NULL,
+    before_reserved_qty DECIMAL(18, 4) NOT NULL,
+    after_reserved_qty DECIMAL(18, 4) NOT NULL,
+    reference_type VARCHAR(50) NULL,
+    reference_id BIGINT NULL,
+    reason VARCHAR(200) NULL,
+    remark VARCHAR(500) NULL,
+    operator_id BIGINT NULL,
+    occurred_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    idempotency_key VARCHAR(100) NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_inventory_transaction_idempotency (tenant_id, idempotency_key),
+    KEY idx_inventory_transaction_material (tenant_id, material_id, occurred_at),
+    KEY idx_inventory_transaction_type (tenant_id, transaction_type, occurred_at)
+);

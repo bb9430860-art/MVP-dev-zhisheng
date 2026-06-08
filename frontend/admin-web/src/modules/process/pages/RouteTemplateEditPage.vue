@@ -34,6 +34,7 @@
         :loading="stepLoading"
         @create="openStepDialog(null)"
         @edit="openStepDialog"
+        @edit-materials="openMaterialDialog"
         @toggle-enabled="toggleStepEnabled"
         @delete="removeStep"
         @move-up="moveUp"
@@ -49,6 +50,16 @@
       @close="closeStepDialog"
       @save="saveStep"
     />
+
+    <StepMaterialRequirementDialog
+      :visible="materialDialogVisible"
+      :step="editingMaterialStep"
+      :materials="editingStepMaterials"
+      :loading="materialLoading"
+      :saving="materialSaving"
+      @close="closeMaterialDialog"
+      @save="saveStepMaterials"
+    />
   </section>
 </template>
 
@@ -58,6 +69,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import RouteTemplateForm from "../components/RouteTemplateForm.vue";
+import StepMaterialRequirementDialog from "../components/StepMaterialRequirementDialog.vue";
 import StepTemplateFormDialog from "../components/StepTemplateFormDialog.vue";
 import StepTemplateTable from "../components/StepTemplateTable.vue";
 import {
@@ -65,10 +77,12 @@ import {
   createStepTemplate,
   deleteStepTemplate,
   getRouteTemplate,
+  listStepMaterialRequirementsByStep,
   listStepTemplates,
   moveStepDown,
   moveStepUp,
   reorderSteps,
+  replaceStepMaterialRequirements,
   setRouteTemplateEnabled,
   setStepTemplateEnabled,
   updateRouteTemplate,
@@ -76,6 +90,8 @@ import {
 } from "../api/processRouteTemplateApi";
 import type {
   RouteTemplatePayload,
+  StepMaterialRequirementPayload,
+  StepMaterialRequirementTemplate,
   StepTemplate,
   StepTemplatePayload,
 } from "../types";
@@ -100,9 +116,14 @@ const originalEnabled = ref(false);
 const routeSaving = ref(false);
 const stepLoading = ref(false);
 const stepSaving = ref(false);
+const materialLoading = ref(false);
+const materialSaving = ref(false);
 const steps = ref<StepTemplate[]>([]);
 const stepDialogVisible = ref(false);
 const editingStep = ref<StepTemplate | null>(null);
+const materialDialogVisible = ref(false);
+const editingMaterialStep = ref<StepTemplate | null>(null);
+const editingStepMaterials = ref<StepMaterialRequirementTemplate[]>([]);
 
 onMounted(async () => {
   if (routeId.value) {
@@ -219,6 +240,49 @@ async function saveStep(payload: StepTemplatePayload) {
     await loadSteps();
   } finally {
     stepSaving.value = false;
+  }
+}
+
+async function openMaterialDialog(step: StepTemplate) {
+  if (!routeId.value) {
+    return;
+  }
+  editingMaterialStep.value = step;
+  materialDialogVisible.value = true;
+  materialLoading.value = true;
+  try {
+    editingStepMaterials.value = await listStepMaterialRequirementsByStep(
+      routeId.value,
+      step.id,
+    );
+  } finally {
+    materialLoading.value = false;
+  }
+}
+
+function closeMaterialDialog() {
+  materialDialogVisible.value = false;
+  editingMaterialStep.value = null;
+  editingStepMaterials.value = [];
+}
+
+async function saveStepMaterials(
+  materials: StepMaterialRequirementPayload[],
+) {
+  if (!routeId.value || !editingMaterialStep.value) {
+    return;
+  }
+  materialSaving.value = true;
+  try {
+    editingStepMaterials.value = await replaceStepMaterialRequirements(
+      routeId.value,
+      editingMaterialStep.value.id,
+      materials,
+    );
+    ElMessage.success("已保存工序物料需求");
+    closeMaterialDialog();
+  } finally {
+    materialSaving.value = false;
   }
 }
 

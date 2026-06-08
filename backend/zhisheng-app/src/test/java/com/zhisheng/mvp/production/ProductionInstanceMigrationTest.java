@@ -27,7 +27,6 @@ class ProductionInstanceMigrationTest {
                 .contains("production_route_instance", "production_step_instance", "production_step_checkin")
                 .doesNotContain(
                         "file_asset",
-                        "inventory_stock",
                         "inventory",
                         "attendance_record",
                         "attendance",

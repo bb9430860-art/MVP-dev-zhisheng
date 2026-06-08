@@ -94,6 +94,7 @@ class ProductionWorkOrderApiTest {
 
     @Test
     void createListDetailUpdateMaterialsReleaseAndCancelFollowApiBoundaries() throws Exception {
+        int inventoryTransactionCountBefore = countRows("inventory_transaction");
         orderItemAdapter.putDemoOrderItem(candidate(3002L, 702L, "WO-CREATE-001", "创建工单产品"));
 
         String createResponse = mockMvc.perform(post("/api/production/work-orders/from-order-item")
@@ -111,7 +112,7 @@ class ProductionWorkOrderApiTest {
 
         assertThat(orderItemAdapter.productionWriteBackCount()).isZero();
         assertThat(countRows("production_route_instance")).isZero();
-        assertThat(tableExists("inventory_transaction")).isFalse();
+        assertThat(countRows("inventory_transaction")).isEqualTo(inventoryTransactionCountBefore);
 
         mockMvc.perform(post("/api/production/work-orders/from-order-item")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -201,7 +202,7 @@ class ProductionWorkOrderApiTest {
 
         assertThat(orderItemAdapter.productionWriteBackCount()).isZero();
         assertThat(countRows("production_route_instance")).isZero();
-        assertThat(tableExists("inventory_transaction")).isFalse();
+        assertThat(countRows("inventory_transaction")).isEqualTo(inventoryTransactionCountBefore);
     }
 
     @Test
